@@ -1,0 +1,27 @@
+{% extends "admin/base_site.html" %}
+{% block content %}
+{% if operation == "delete" %}
+<p><strong>This permanently removes the selected accounts. They cannot be retrieved.</strong>
+{% if opts.model_name == "student" %}All of these students' exam results and returned submissions will also be permanently deleted. Their uploaded activity files will also be permanently deleted.
+{% else %}Historical assessment records and results are kept, without allowing a replacement account to access the old account's work. Their lecture materials and associated activity files will be permanently deleted.{% endif %}
+Type DELETE only if you intend to permanently remove these accounts.</p>
+{% else %}
+<p>Retrieve these accounts and enable sign-in again. Their saved assessment records and results will be available.</p>
+{% endif %}
+<ul>{% for account in queryset %}<li>{{ account }}</li>{% endfor %}</ul>
+<form method="post">{% csrf_token %}
+  {% if bulk_action %}
+    <input type="hidden" name="action" value="{{ bulk_action }}">
+    {% for account in queryset %}<input type="hidden" name="_selected_action" value="{{ account.pk }}">{% endfor %}
+  {% endif %}
+  <input type="hidden" name="confirm_account_action" value="yes">
+  {% if error %}<p class="errornote" role="alert">{{ error }}</p>{% endif %}
+  {% if operation == "delete" %}
+    <p><label for="accountConfirmation">Type DELETE to confirm</label><br><input id="accountConfirmation" name="confirmation" type="text" required autocomplete="off"></p>
+    <input type="submit" value="DELETE">
+  {% else %}
+    <input type="submit" value="Retrieve account">
+  {% endif %}
+  <a href="{{ list_url }}">Cancel</a>
+</form>
+{% endblock %}

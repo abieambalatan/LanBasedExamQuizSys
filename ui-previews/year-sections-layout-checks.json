@@ -1,0 +1,26 @@
+[
+  {
+    "screen": "builder",
+    "requested_width": 1440,
+    "width": 1440,
+    "documentWidth": 1440,
+    "view": "createExam",
+    "overflow": false
+  },
+  {
+    "screen": "builder",
+    "requested_width": 390,
+    "width": 390,
+    "documentWidth": 390,
+    "view": "createExam",
+    "overflow": false
+  },
+  {
+    "screen": "builder",
+    "requested_width": 320,
+    "width": 320,
+    "documentWidth": 320,
+    "view": "createExam",
+    "overflow": false
+  }
+]

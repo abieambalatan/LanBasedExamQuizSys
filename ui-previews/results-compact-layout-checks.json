@@ -1,0 +1,42 @@
+[
+  {
+    "width": 1440,
+    "pageWidth": 1425,
+    "tableWidth": 1111,
+    "availableWidth": 1111,
+    "columns": 12,
+    "tableFits": true
+  },
+  {
+    "width": 1366,
+    "pageWidth": 1351,
+    "tableWidth": 1037,
+    "availableWidth": 1037,
+    "columns": 12,
+    "tableFits": true
+  },
+  {
+    "width": 1280,
+    "pageWidth": 1265,
+    "tableWidth": 951,
+    "availableWidth": 951,
+    "columns": 12,
+    "tableFits": true
+  },
+  {
+    "width": 1024,
+    "pageWidth": 1009,
+    "tableWidth": 900,
+    "availableWidth": 747,
+    "columns": 12,
+    "tableFits": false
+  },
+  {
+    "width": 390,
+    "pageWidth": 390,
+    "tableWidth": 900,
+    "availableWidth": 356,
+    "columns": 12,
+    "tableFits": false
+  }
+]

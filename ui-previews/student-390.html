@@ -1,0 +1,1218 @@
+<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><base href="file:///C:/AralHubLanBasedSystem%20V2/files/"><link rel="stylesheet" href="css/style.css"></head><body><a class="skip-link" href="#mainContent">Skip to content</a><div id="app"></div><script>/* Shared frontend helpers used by both student and admin pages. */
+function esc(str) {
+   if (str === null || str === undefined) return "";
+   return String(str).replace(/[&<>"']/g, (ch) => ({
+      "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
+   }[ch]));
+}
+
+function fmtTime(totalSeconds) {
+   const s = Math.max(0, Math.floor(totalSeconds || 0));
+   const m = Math.floor(s / 60);
+   const sec = s % 60;
+   return `${String(m).padStart(2, "0")}:${String(sec).padStart(2, "0")}`;
+}
+
+function assessmentPoints(activity, question) {
+   return activity?.activityType === "quiz" || ["true_false", "matching"].includes(question?.type) ? 1 : 2;
+}
+
+function assessmentPointLabel(activity, question) {
+   const points = assessmentPoints(activity, question);
+   return `${points} ${points === 1 ? "point" : "points"}`;
+}
+
+function assessmentScoringLabel(activity) {
+   return activity?.activityType === "quiz" ? "1 point per question" : "Multiple Choice and Identification: 2 points each; True/False and Matching Type: 1 point each";
+}
+
+function uiIcon(name, className = "") {
+   const paths = {
+      grid: '<rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/>',
+      book: '<path d="M12 6c-3-2-6-2-9-1v15c3-1 6-1 9 1 3-2 6-2 9-1V5c-3-1-6-1-9 1Z"/><path d="M12 6v15"/>',
+      people: '<circle cx="9" cy="8" r="3"/><path d="M3 21v-3a6 6 0 0 1 12 0v3M16 5a3 3 0 0 1 0 6M21 21v-3a6 6 0 0 0-4-5"/>',
+      plus: '<path d="M12 5v14M5 12h14"/>',
+      arrow: '<path d="M5 12h14m-6-6 6 6-6 6"/>',
+      check: '<path d="m6 12 4 4 8-8"/><circle cx="12" cy="12" r="10"/>',
+      clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
+      file: '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"/><path d="M14 2v6h6M8 13h8M8 17h5"/>',
+      search: '<circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 5 5"/>',
+      logout: '<path d="M9 4H5a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h4M10 12h11m-4-4 4 4-4 4"/>',
+      bell: '<path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4"/>',
+      spark: '<path d="m12 3 2.5 6.5L21 12l-6.5 2.5L12 21l-2.5-6.5L3 12l6.5-2.5ZM20 2v4m-2-2h4"/>',
+      shield: '<path d="m12 3 8 3v6c0 5-8 9-8 9s-8-4-8-9V6Z"/><path d="m8 12 3 3 5-5"/>',
+   };
+   return `<svg class="ui-icon ${className}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths[name] || paths.book}</svg>`;
+}
+
+function userInitials(name) {
+   return String(name || "A").trim().split(/\s+/).slice(0, 2).map(word => word[0]).join("").toUpperCase();
+}
+
+function answeredQuestionCount(runtime) {
+   return runtime.exam.questions.filter(question => {
+      const value = runtime.answers[question.id];
+      return value !== undefined && value !== null && String(value).trim() !== "";
+   }).length;
+}
+
+async function openWorkspaceSection(section) {
+   if (section === "notifications" && state.currentUser?.role === "teacher") { await openSubmissionNotifications(); return; }
+   if (section === "materials") { await openLearningWorkspace(); return; }
+   const student = state.currentUser?.role === "student" || !state.currentUser?.role;
+   if (state.currentUser?.role === "teacher" && section === "overview") section = "activities";
+   if (state.currentUser?.role === "teacher" && section === "activities") state.selectedTeacherSubject = "";
+   state.workspaceSection = section;
+   if (student && state.view !== "studentHome") await goStudentHome();
+   else if (!student && state.view !== "adminHome") await goAdminHome();
+   else render();
+   const target = document.getElementById(section);
+   if (section === "students") target?.querySelector("details")?.setAttribute("open", "");
+   target?.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+function renderWorkspace(body, role) {
+   const student = role === "student";
+   const teacher = role === "teacher";
+   const focus = state.view === "takeExam";
+   const roleName = student ? "Student" : role === "admin" ? "Administrator" : "Teacher";
+   const section = state.workspaceSection || (teacher || student ? "activities" : "overview");
+   const title = ({ teacherNotifications: "Notifications", learningHome: "Lecture materials", studentHome: "My assessments", adminHome: teacher ? (section === "students" ? "Students" : "My assessments") : "Overview", createExam: "Activity builder", adminResults: "Activity results", adminResultReview: "Answer review", studentResult: "Submission receipt", takeExam: "Assessment in progress" })[state.view] || "Workspace";
+   const home = student ? "studentHome" : "adminHome";
+   const links = [
+      ...(role === "admin" ? [{ id: "overview", label: "Overview", icon: "grid" }] : []),
+      ...(role === "admin" ? [{ id: "teachers", label: "Teachers", icon: "book" }] : [{ id: "activities", label: "My assessments", icon: "book" }]),
+      ...(student || teacher ? [{ id: "materials", label: "Lecture materials", icon: "file" }] : []),
+      ...(teacher ? [{ id: "notifications", label: "Notifications", icon: "bell" }] : []),
+      ...(!student ? [{ id: "students", label: "Students", icon: "people" }] : []),
+   ];
+   const progress = focus && state.runtime ? `${answeredQuestionCount(state.runtime)} of ${state.runtime.exam.questions.length} answered` : "";
+   return `<div class="workspace ${focus ? "workspace-focus" : ""} ${student && state.view === "studentHome" ? "workspace-student-home" : ""}">
+      <aside class="sidebar" aria-label="Workspace navigation">
+         <div class="sidebar-brand"><span class="brand-logo-frame"><img src="images/wallpapercdk.png" alt="AbieksExamSys logo"></span><div><strong>AbieksExamSys</strong><small>LEARNING, CONNECTED</small></div></div>
+         <div class="sidebar-label">${roleName} workspace</div>
+         ${focus ? `<div class="focus-note">${uiIcon("shield")}<strong>Assessment in progress</strong><p>Use the question numbers to review your answers.</p><span class="badge open" data-answer-count>${progress}</span></div>` : `<nav class="sidebar-nav">${links.map(link => { const active = link.id === "notifications" ? state.view === "teacherNotifications" : link.id === "materials" ? state.view === "learningHome" : state.view === home && section === link.id; const count = Math.max(0, Number(state.notificationUnread) || 0); return `<button class="nav-item ${active ? "active" : ""}" ${active ? 'aria-current="page"' : ""} ${link.id === "notifications" ? `data-notification-nav aria-label="Notifications, ${count} unread submissions"` : ""} onclick="openWorkspaceSection('${link.id}')">${uiIcon(link.icon)}<span>${link.label}</span>${link.id === "notifications" ? `<span class="notification-badge" data-notification-count ${count ? "" : "hidden"}>${count > 99 ? "99+" : count}</span>` : ""}</button>`; }).join("")}${role === "teacher" ? `<button class="nav-item ${state.view === "createExam" ? "active" : ""}" onclick="startCreateExam()">${uiIcon("plus")}<span>Create activity</span></button>` : ""}</nav>`}
+         <div class="sidebar-bottom"><div class="sidebar-note">${uiIcon("shield")}<strong>${student ? "Ready for your next assessment?" : "Your classroom, in one place."}</strong><span>${student ? "Find your assigned exams and quizzes in My assessments." : "Manage assessments, student accounts, and results from your workspace."}</span></div>${!focus ? `<button class="nav-item signout" onclick="logout()">${uiIcon("logout")}<span>Sign out</span></button>` : ""}</div>
+      </aside>
+      <div class="workspace-main"><header class="workspace-header"><div class="breadcrumb">${roleName} workspace <span>/</span><strong>${title}</strong></div><div class="profile"><div><strong>${esc(state.currentUser.name || roleName)}</strong><small>${roleName}${student && state.currentUser.department ? ` · ${esc(state.currentUser.department)}` : ""}</small></div><span class="avatar">${esc(userInitials(state.currentUser.name))}</span></div></header><main id="mainContent" class="workspace-content">${body}</main><footer class="workspace-footer"><span>AbieksExamSys · Colegio de Kidapawan</span><span>A better space to learn.</span></footer></div>
+   </div>`;
+}
+
+function renderActivityTools() {
+   const type = state.activityFilter || "all";
+   return `<div class="activity-toolbar" data-filter="${esc(type)}"><label class="activity-search">${uiIcon("search")}<span class="sr-only">Search assessments</span><input id="activitySearch" type="search" value="${esc(state.activityQuery || "")}" placeholder="Search title or subject" oninput="filterActivityCards()"></label><div class="activity-tabs" role="group" aria-label="Activity type">${[["all", "All activities"], ["exam", "Exams"], ["quiz", "Quizzes"]].map(([value, label]) => `<button class="${type === value ? "active" : ""}" aria-pressed="${type === value}" onclick="setActivityFilter('${value}', this)">${label}</button>`).join("")}</div></div><p id="activitySearchCount" class="search-count" role="status"></p>`;
+}
+
+function renderAuthLayout(body, teacher = false) {
+   return `<div class="auth-layout"><aside class="auth-story"><a class="story-brand" href="index.html"><span class="brand-logo-frame"><img src="images/wallpapercdk.png" alt="AbieksExamSys logo"></span><span>AbieksExamSys</span></a><div class="auth-story-copy"><span class="story-eyebrow">${teacher ? "FOR THE PEOPLE WHO INSPIRE" : "YOUR SPACE TO GROW"}</span><h1>${teacher ? "Great teaching.<br> Greater possibilities." : "A little focus.<br> A brighter future."}</h1><p>${teacher ? "Create thoughtful assessments, bring your classroom together, and see every student's progress." : "A calm, connected place for your assessments. Show what you know, one question at a time."}</p><div class="story-features"><span>${uiIcon("book")} Every subject, together</span><span>${uiIcon("check")} Progress you can see</span><span>${uiIcon("shield")} Your own learning space</span></div></div><span class="story-footer">COLEGIO DE KIDAPAWAN · AbieksExamSys</span><div class="story-orbit" aria-hidden="true"></div></aside><main class="auth-form-area" id="mainContent">${body}</main></div>`;
+}
+
+function navigateToPortal(path) { window.location.assign(path); }
+
+function renderPortalLogin(action = "doPortalLogin", usernameId = "li_username", passwordId = "li_password") {
+   return `<div class="wrap auth-wrap"><div class="wrap-inner auth-inner auth-login-inner"><form class="sheet auth-card login-card" onsubmit="event.preventDefault(); submitAuthForm(this, ${action})"><div class="auth-brand"><span class="brand-logo-frame"><img src="images/wallpapercdk.png" alt="AbieksExamSys logo"></span><span>AbieksExamSys</span></div><div class="auth-heading"><span class="eyebrow">Student &amp; teacher sign in</span><h2>Welcome back</h2><div class="meta">Use your teacher username or student ID. Your account opens the right workspace.</div></div>${state.successMsg ? `<div class="banner success">${esc(state.successMsg)}</div>` : ""}${state.errorMsg ? `<div class="banner">${esc(state.errorMsg)}</div>` : ""}<div class="field"><label for="${usernameId}">Username or student ID</label><input id="${usernameId}" type="text" placeholder="Your username or student ID" autocomplete="username" required maxlength="255"></div><div class="field"><label for="${passwordId}">Password</label><input id="${passwordId}" type="password" placeholder="Your password" autocomplete="current-password" required></div><button type="submit" class="btn block auth-submit">Sign in</button><details class="forgot-password-help"><summary>Forgot password?</summary><p>Students can ask their teacher or the school administrator to reset their password after verifying their student ID. Teachers can contact the school administrator.</p></details></form><a class="back-link" href="/?signup=1">Create a student account</a><p class="help-text" style="text-align:center">Teacher accounts are created by the school administrator.</p><a class="back-link" href="/">&larr; Back to AbieksExamSys</a></div></div>`;
+}
+
+async function doPortalLogin(usernameId = "li_username", passwordId = "li_password") {
+   const username = document.getElementById(usernameId).value.trim();
+   const password = document.getElementById(passwordId).value;
+   if (!username || !password) { state.errorMsg = "Enter your username or student ID and password."; render(); return; }
+   try {
+      const result = await apiRequest("POST", "/api/auth/login", {username, password});
+      const destination = {student:"/student", teacher:"/teacher", admin:"/admin/"}[result.role];
+      if (!destination) throw new Error("Your account could not be opened. Contact the school administrator.");
+      navigateToPortal(destination);
+   } catch (error) { state.errorMsg = error.message || "Could not sign in. Please try again."; render(); }
+}
+
+function setActivityFilter(type, button) {
+   state.activityFilter = type;
+   document.querySelectorAll(".activity-tabs button").forEach(item => { item.classList.toggle("active", item === button); item.setAttribute("aria-pressed", item === button ? "true" : "false"); });
+   document.querySelector(".activity-toolbar").dataset.filter = type;
+   filterActivityCards();
+}
+
+function filterActivityCards() {
+   const query = (document.getElementById("activitySearch")?.value || "").trim().toLowerCase();
+   state.activityQuery = document.getElementById("activitySearch")?.value || "";
+   const type = document.querySelector(".activity-toolbar")?.dataset.filter || "all";
+   let visible = 0;
+   document.querySelectorAll(".exam-row[data-activity]").forEach(card => {
+      const subjectMatches = state.currentUser?.role !== "teacher" || !state.selectedTeacherSubject || card.dataset.subject === state.selectedTeacherSubject;
+      card.hidden = !(subjectMatches && card.dataset.search.includes(query) && (type === "all" || card.dataset.activity === type));
+      if (!card.hidden) visible++;
+   });
+   const empty = document.getElementById("activityNoMatches");
+   if (empty) empty.hidden = visible > 0;
+   const count = document.getElementById("activitySearchCount");
+   if (count) count.textContent = `${visible} ${visible === 1 ? "assessment" : "assessments"} shown`;
+}
+
+// Preserve entries when validation redraws the same authentication screen.
+// Passwords remain only in the current page's memory, never in browser storage.
+function captureInterfaceState() {
+   const app = document.getElementById("app");
+   return {
+      view: app.dataset.view,
+      focusId: document.activeElement?.id,
+      fields: Array.from(app.querySelectorAll(".auth-form-area input[id], .auth-form-area select[id]"), field => ({
+         id: field.id, value: field.value,
+         selected: field.multiple ? Array.from(field.selectedOptions, option => option.value) : null,
+      })),
+   };
+}
+
+function refreshMultiSelect(select) {
+   select.parentElement.querySelector(`[data-select-id="${select.id}"]`)?.remove();
+   const label = select.closest(".field")?.querySelector("label");
+   if (label && !label.id) label.id = `${select.id}-label`;
+   const group = document.createElement("div");
+   group.className = "choice-list";
+   group.dataset.selectId = select.id;
+   group.setAttribute("role", "group");
+   if (label) group.setAttribute("aria-labelledby", label.id);
+   const options = Array.from(select.options).filter(option => option.value);
+   if (!options.length) {
+      const message = document.createElement("p");
+      message.className = "help-text";
+      message.textContent = select.options[0]?.textContent || "No options available.";
+      group.append(message);
+   }
+   for (const option of options) {
+      const item = document.createElement("label");
+      item.className = "choice-item";
+      const checkbox = document.createElement("input");
+      checkbox.type = "checkbox";
+      checkbox.checked = option.selected;
+      checkbox.disabled = select.disabled || option.disabled;
+      checkbox.addEventListener("change", () => {
+         option.selected = checkbox.checked;
+         select.dispatchEvent(new Event("change", { bubbles: true }));
+      });
+      const text = document.createElement("span");
+      text.textContent = option.textContent;
+      item.append(checkbox, text);
+      group.append(item);
+   }
+   select.hidden = true;
+   select.after(group);
+}
+
+function enhanceInterface(previous) {
+   const app = document.getElementById("app");
+   if (previous?.view === state.view) {
+      for (const saved of previous.fields) {
+         const field = document.getElementById(saved.id);
+         if (!field) continue;
+         if (saved.selected) Array.from(field.options).forEach(option => { option.selected = saved.selected.includes(option.value); });
+         else field.value = saved.value;
+      }
+   }
+   app.dataset.view = state.view;
+   app.querySelectorAll(".field").forEach((field, index) => {
+      const control = field.querySelector("input, select, textarea");
+      const label = field.querySelector("label");
+      if (control && label && !label.contains(control)) {
+         if (!control.id) control.id = `field-${index}`;
+         label.htmlFor = control.id;
+         const hint = field.querySelector(".help-text");
+         if (hint) { hint.id = `${control.id}-hint`; control.setAttribute("aria-describedby", hint.id); }
+      }
+   });
+   app.querySelectorAll('input[type="password"]').forEach(input => {
+      const wrapper = document.createElement("div");
+      wrapper.className = "password-field";
+      input.before(wrapper);
+      wrapper.append(input);
+      const toggle = document.createElement("button");
+      toggle.type = "button";
+      toggle.className = "password-toggle";
+      toggle.textContent = "Show";
+      toggle.setAttribute("aria-controls", input.id);
+      toggle.setAttribute("aria-pressed", "false");
+      toggle.setAttribute("aria-label", `Show ${input.closest(".field")?.querySelector("label")?.textContent.toLowerCase() || "password"}`);
+      toggle.addEventListener("click", () => {
+         const show = input.type === "password";
+         input.type = show ? "text" : "password";
+         toggle.textContent = show ? "Hide" : "Show";
+         toggle.setAttribute("aria-pressed", String(show));
+         toggle.setAttribute("aria-label", `${show ? "Hide" : "Show"} ${input.closest(".field")?.querySelector("label")?.textContent.toLowerCase() || "password"}`);
+      });
+      wrapper.append(toggle);
+   });
+   app.querySelectorAll("select[multiple]").forEach(refreshMultiSelect);
+   app.querySelectorAll(".opt-row").forEach(row => {
+      const letter = row.querySelector(".opt-label")?.textContent || "";
+      row.querySelector('input[type="text"]')?.setAttribute("aria-label", `Option ${letter}`);
+      row.querySelector('input[type="radio"]')?.setAttribute("aria-label", `Mark option ${letter} as correct`);
+   });
+   app.querySelectorAll(".banner, .conn-banner").forEach(banner => {
+      banner.setAttribute("role", banner.classList.contains("success") ? "status" : "alert");
+   });
+   app.querySelectorAll("th").forEach(header => { header.scope = "col"; });
+   app.querySelectorAll(".teacher-table-wrap, .table-scroll").forEach(wrapper => {
+      wrapper.tabIndex = 0;
+      wrapper.setAttribute("role", "region");
+      wrapper.setAttribute("aria-label", "Directory table. Scroll horizontally to see all columns.");
+   });
+   if (document.getElementById("activitySearch")) filterActivityCards();
+   const modal = app.querySelector('[role="dialog"]');
+   document.body.classList.toggle("modal-open", !!modal);
+   if (modal) modal.querySelector("button")?.focus();
+   else if (state.errorMsg) {
+      const alert = app.querySelector('[role="alert"]');
+      if (alert) { alert.tabIndex = -1; alert.focus(); }
+   } else if (previous?.view === state.view && previous.focusId) document.getElementById(previous.focusId)?.focus({ preventScroll: true });
+}
+
+function renderDirectoryTools(id, placeholder) {
+   return `<div class="table-tools"><label class="activity-search">${uiIcon("search")}<span class="sr-only">${esc(placeholder)}</span><input type="search" placeholder="${esc(placeholder)}" oninput="filterDirectory(this, '${id}')"></label><p id="${id}-status" class="search-count" role="status"></p><p class="table-scroll-hint">Scroll sideways to see all columns.</p></div>`;
+}
+
+function filterDirectory(input, directoryId) {
+   const directory = document.getElementById(directoryId);
+   if (!directory) return;
+   const query = input.value.trim().toLowerCase();
+   let count = 0;
+   directory.querySelectorAll("tbody tr").forEach(row => {
+      row.hidden = !row.textContent.toLowerCase().includes(query);
+      if (!row.hidden) count++;
+   });
+   const status = document.getElementById(`${directoryId}-status`);
+   if (status) status.textContent = count ? `${count} ${count === 1 ? "record" : "records"} shown` : "No matching records. Try another name or ID.";
+}
+
+async function submitAuthForm(form, action) {
+   if (form.getAttribute("aria-busy") === "true") return;
+   form.setAttribute("aria-busy", "true");
+   const button = form.querySelector('button[type="submit"]');
+   const label = button.textContent;
+   button.disabled = true;
+   button.textContent = "Please wait...";
+   try { await action(); }
+   finally {
+      form.removeAttribute("aria-busy");
+      button.disabled = false;
+      button.textContent = label;
+   }
+}
+
+document.addEventListener("keydown", event => {
+   const modal = document.querySelector('[role="dialog"]');
+   if (!modal) return;
+   if (event.key === "Escape") { event.preventDefault(); closeModal(); }
+   if (event.key === "Tab") {
+      const buttons = Array.from(modal.querySelectorAll("button:not(:disabled)"));
+      const first = buttons[0], last = buttons[buttons.length - 1];
+      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
+      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
+   }
+});
+
+let _csrfToken = null;
+let _csrfLoading = null;
+
+function portalRequestRole(path) {
+   if (path === "/api/auth/login") return "public";
+   if (window.ARALHUB_ROLE) return window.ARALHUB_ROLE;
+   if (path.startsWith("/api/admin/") || path.startsWith("/api/teachers")) return "teacher";
+   if (typeof state !== "undefined" && state.currentUser?.role === "teacher") return "teacher";
+   return "student";
+}
+
+async function getCsrfToken() {
+   if (_csrfToken) return _csrfToken;
+   if (!_csrfLoading) {
+      _csrfLoading = (async () => {
+         try {
+            const response = await fetch("/api/csrf", { credentials: "same-origin", cache: "no-store", headers:{"X-Portal-Role":portalRequestRole("/api/csrf")} });
+            const data = await response.json();
+            if (!response.ok || typeof data.csrfToken !== "string") throw new Error("Could not initialize a secure request. Refresh the page and try again.");
+            _csrfToken = data.csrfToken;
+            return _csrfToken;
+         } catch (error) {
+            if (error instanceof TypeError) throw new Error("Could not reach the server. Check your connection and try again.");
+            throw error;
+         } finally { _csrfLoading = null; }
+      })();
+   }
+   return _csrfLoading;
+}
+
+async function apiRequest(method, path, body, extraHeaders) {
+   const headers = Object.assign({ "Content-Type": "application/json", "X-Portal-Role":portalRequestRole(path) }, extraHeaders || {});
+   const multipart = body instanceof FormData;
+   if (multipart) delete headers["Content-Type"];
+   if (!["GET", "HEAD", "OPTIONS"].includes(method)) headers["X-CSRFToken"] = await getCsrfToken();
+   const opts = { method, headers, credentials: "same-origin", cache: "no-store" };
+   if (body !== undefined) opts.body = multipart ? body : JSON.stringify(body);
+
+   // Only keyed submissions are safe to resend after a lost response.
+   const attempts = method === "POST" && path === "/api/results" && body?.submissionId ? 4 : 1;
+   let csrfRetried = false;
+   for (let attempt = 0; attempt < attempts; attempt++) {
+      try {
+         const res = await fetch(path, opts);
+         let data = null;
+         try { data = await res.json(); } catch (e) { data = null; }
+         if (res.ok && data !== null) {
+            if (path.endsWith("/login") || path === "/api/logout") _csrfToken = null;
+            return data;
+         }
+         if (res.status === 403) _csrfToken = null;
+         if (res.status === 403 && data?.code === "csrf_failed" && !csrfRetried && !["GET", "HEAD", "OPTIONS"].includes(method)) {
+            // CSRF rejects the request before its handler runs, so this one
+            // retry cannot duplicate a publish, submission, or teacher return.
+            csrfRetried = true;
+            headers["X-CSRFToken"] = await getCsrfToken();
+            attempt--;
+            continue;
+         }
+         const error = new Error((data && data.error) || `Request failed (${res.status}).`);
+         error.status = res.status;
+         error.code = data && data.code;
+         error.retryable = [502, 503, 504].includes(res.status) || (res.ok && data === null);
+         throw error;
+      } catch (err) {
+         const retryable = err instanceof TypeError || err.retryable;
+         if (!retryable || attempt === attempts - 1) {
+            if (err instanceof TypeError) throw new Error("Could not reach the server. Check your connection and try again.");
+            throw err;
+         }
+         await new Promise(resolve => setTimeout(resolve, 1000 * (2 ** attempt) + Math.random() * 500));
+      }
+   }
+}
+
+let _modal = null;
+
+function showModal(opts) {
+   _modal = {
+      title: opts.title || "",
+      message: opts.message || "",
+      confirmLabel: opts.confirmLabel || "OK",
+      cancelLabel: opts.cancelLabel || null,
+      onConfirm: typeof opts.onConfirm === "function" ? opts.onConfirm : null,
+      inputLabel: opts.inputLabel || null,
+      inputExpected: opts.inputExpected || null,
+      inputRequiredMessage: opts.inputRequiredMessage || "Enter the student's ID number to continue.",
+      inputValue: "",
+      inputError: "",
+   };
+   if (typeof render === "function") render();
+}
+
+function closeModal() {
+   _modal = null;
+   if (typeof render === "function") render();
+}
+
+function _modalConfirm() {
+   if (_modal?.inputLabel && (!_modal.inputValue.trim() || (_modal.inputExpected && _modal.inputValue.trim() !== _modal.inputExpected))) {
+      _modal.inputError = _modal.inputRequiredMessage;
+      if (typeof render === "function") render();
+      document.getElementById("dialogInput")?.focus();
+      return;
+   }
+   const cb = _modal && _modal.onConfirm;
+   const value = _modal?.inputLabel ? _modal.inputValue.trim() : undefined;
+   _modal = null;
+   if (cb) cb(value);
+   else if (typeof render === "function") render();
+}
+
+function renderModalHtml() {
+   if (!_modal) return "";
+   return `
+   <div class="modal-backdrop" onclick="if(event.target===this) closeModal()">
+      <div class="modal-box" role="dialog" aria-modal="true" ${_modal.title ? 'aria-labelledby="dialogTitle"' : 'aria-label="Notification"'}>
+         ${_modal.title ? `<h3 id="dialogTitle">${esc(_modal.title)}</h3>` : ""}
+         ${_modal.message ? `<p>${esc(_modal.message)}</p>` : ""}
+         ${_modal.inputLabel ? `<label for="dialogInput">${esc(_modal.inputLabel)}</label><input id="dialogInput" type="text" value="${esc(_modal.inputValue)}" autocomplete="off" required aria-invalid="${!!_modal.inputError}" ${_modal.inputError ? 'aria-describedby="dialogInputError"' : ''} oninput="_modal.inputValue=this.value" onkeydown="if(event.key==='Enter'){event.preventDefault();_modalConfirm();}">${_modal.inputError ? `<p id="dialogInputError" role="alert">${esc(_modal.inputError)}</p>` : ""}` : ""}
+         <div class="modal-actions">
+            ${_modal.cancelLabel ? `<button class="btn secondary" onclick="closeModal()">${esc(_modal.cancelLabel)}</button>` : ""}
+            <button class="btn" onclick="_modalConfirm()">${esc(_modal.confirmLabel)}</button>
+         </div>
+      </div>
+   </div>`;
+}
+
+/* Lecture materials and activity file submissions, shared by both workspaces. */
+const LEARNING_FILE_ACCEPT = ".pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx";
+function learningFileSize(size) {
+   return size >= 1024 * 1024 ? `${(size / (1024 * 1024)).toFixed(1)} MB` : `${Math.max(1, Math.ceil(size / 1024))} KB`;
+}
+function learningFileLinks(file) {
+   return `<div class="learning-file"><span class="activity-icon violet">${uiIcon("file")}</span><div><strong>${esc(file.filename)}</strong><small>${learningFileSize(file.size)}</small></div><div class="learning-file-actions"><a class="btn secondary" href="${esc(file.openUrl)}" target="_blank" rel="noopener">Open</a><a class="linklike" href="${esc(file.downloadUrl)}">Download</a></div></div>`;
+}
+async function openLearningWorkspace() {
+   state.workspaceSection = "materials";
+   state.learningError = ""; state.learningNotice = "";
+   state.learningSubmissions = null; state.learningSelectedMaterial = null;
+   const user = state.currentUser;
+   try {
+      const materials = await apiRequest("GET", "/api/learning/materials");
+      if (state.currentUser !== user) return;
+      state.learningMaterials = materials;
+   } catch (error) {
+      if (state.currentUser !== user) return;
+      state.learningMaterials = [];
+      state.learningError = error.message;
+   }
+   state.view = "learningHome";
+   render();
+}
+function learningTargetClasses(form) {
+   return Array.from(form.querySelectorAll('[name="lectureClass"]:checked'), checkbox => checkbox.matches(":disabled") ? null : ({department:checkbox.dataset.department, yearLevel:checkbox.dataset.year, section:checkbox.value})).filter(Boolean);
+}
+function updateLearningClassCount() {
+   const form = document.querySelector(".learning-upload form");
+   if (!form) return;
+   const count = learningTargetClasses(form).length;
+   form.querySelector(".learning-class-count").textContent = `${count} ${count === 1 ? "class selected" : "classes selected"}`;
+}
+function toggleLearningDepartment(index, selected) {
+   const group = document.getElementById(`lecture-department-${index}`);
+   if (!group) return;
+   group.hidden = !selected;
+   group.disabled = !selected;
+   updateLearningClassCount();
+}
+function toggleLearningYear(departmentIndex, yearIndex, selected) {
+   const group = document.getElementById(`lecture-year-${departmentIndex}-${yearIndex}`);
+   if (!group) return;
+   group.hidden = !selected;
+   group.disabled = !selected;
+   updateLearningClassCount();
+}
+function selectLearningYearSections(departmentIndex, yearIndex, selected) {
+   const group = document.getElementById(`lecture-year-${departmentIndex}-${yearIndex}`);
+   group?.querySelectorAll('[name="lectureClass"]').forEach(checkbox => { checkbox.checked = selected; });
+   updateLearningClassCount();
+}
+function renderLearningClassPicker() {
+   return `<fieldset class="learning-targets"><legend>Share with these classes</legend><p class="help-text">Select every department represented in your class, then choose its year levels and sections. Students in any selected class can view the same material.</p><div class="learning-department-options">${DEPARTMENTS.map((department, index) => `<label class="learning-check"><input type="checkbox" name="lectureDepartment" value="${esc(department)}" onchange="toggleLearningDepartment(${index}, this.checked)"> ${esc(department)}</label>`).join("")}</div><div class="learning-class-groups">${DEPARTMENTS.map((department, departmentIndex) => `<fieldset class="learning-department-group" id="lecture-department-${departmentIndex}" hidden disabled><legend>${esc(department)}</legend><div class="learning-year-options">${YEAR_LEVELS.map((year, yearIndex) => `<label class="learning-check"><input type="checkbox" name="lectureYear" value="${esc(year)}" onchange="toggleLearningYear(${departmentIndex}, ${yearIndex}, this.checked)"> ${esc(year)}</label>`).join("")}</div>${YEAR_LEVELS.map((year, yearIndex) => `<fieldset class="learning-year-sections" id="lecture-year-${departmentIndex}-${yearIndex}" hidden disabled><legend>${esc(department)} &middot; ${esc(year)}</legend><div class="learning-section-actions"><button type="button" class="linklike" onclick="selectLearningYearSections(${departmentIndex}, ${yearIndex}, true)">Select all sections</button><button type="button" class="linklike" onclick="selectLearningYearSections(${departmentIndex}, ${yearIndex}, false)">Clear sections</button></div><div class="learning-section-options">${sectionsForDepartment(department, year).map(section => `<label class="learning-check"><input type="checkbox" name="lectureClass" data-department="${esc(department)}" data-year="${esc(year)}" value="${esc(section)}" onchange="updateLearningClassCount()"> ${esc(department)} ${yearIndex + 1}-${esc(section)}</label>`).join("") || '<span class="help-text">No sections available.</span>'}</div></fieldset>`).join("")}</fieldset>`).join("")}</div><p class="learning-class-count help-text" role="status">0 classes selected</p></fieldset>`;
+}
+function renderLectureUploadForm() {
+   return `<details class="sheet learning-upload"><summary>${uiIcon("plus")} Share lecture material or an activity</summary><form onsubmit="event.preventDefault(); publishLectureMaterial(this)"><fieldset><div class="learning-form-grid"><div class="field"><label for="lectureTitle">Lecture / activity title</label><input id="lectureTitle" name="title" maxlength="200" required></div><div class="field"><label for="lectureSubject">Subject</label><input id="lectureSubject" name="subject" maxlength="200" required></div></div><div class="field"><label for="lectureInstructions">Lecture notes / activity instructions</label><textarea id="lectureInstructions" name="instructions" rows="4" maxlength="10000" placeholder="Describe what students should read or submit."></textarea></div>${renderLearningClassPicker()}<label class="learning-check learning-accept"><input type="checkbox" name="requiresSubmission"> Request a student file submission for this activity</label><div class="field"><label for="lectureFile">Lecture material / activity file</label><input id="lectureFile" name="file" type="file" accept="${LEARNING_FILE_ACCEPT}" required><small class="help-text">PDF, Word, PowerPoint, or Excel. Maximum 25 MB per file. Share additional files as separate materials.</small></div><p class="learning-form-status" role="status"></p><button class="btn" type="submit">${uiIcon("plus")} Share with students</button></fieldset></form></details>`;
+}
+function renderLearningWorkspace() {
+   const teacher = state.currentUser?.role === "teacher";
+   const materials = state.learningMaterials || [];
+   const cards = materials.map(material => `<article class="sheet learning-card"><div class="section-title-row"><div><span class="eyebrow">${esc(material.subject)}</span><h2>${esc(material.title)}</h2><p class="meta">${esc(material.teacherName)} &middot; ${esc(new Date(material.createdAt).toLocaleString())}</p></div><span class="badge ${material.mySubmission ? "done" : "open"}">${material.requiresSubmission ? material.mySubmission ? "Submitted" : "Activity submission" : "Lecture material"}</span></div>${material.instructions ? `<p class="learning-instructions">${esc(material.instructions)}</p>` : ""}${learningFileLinks(material)}${teacher ? `<p class="help-text">Shared with ${(material.targetClasses || []).map(item => esc(`${item.department} ${item.yearLevel}, Section ${item.section}`)).join("; ")}</p><div class="learning-card-actions">${material.requiresSubmission ? `<button class="btn secondary" onclick="openLearningSubmissions('${material.id}')">${uiIcon("people")} View submissions (${material.submissionCount || 0})</button>` : ""}<button class="linklike danger-link" onclick="deleteLectureMaterial('${material.id}')">Delete material</button></div>` : material.requiresSubmission ? `<div class="learning-submission"><h3>Your activity submission</h3>${material.mySubmission ? `<p class="meta">Submitted ${esc(new Date(material.mySubmission.submittedAt).toLocaleString())}</p>${learningFileLinks(material.mySubmission)}<p class="help-text">Uploading again replaces your previous submission.</p>` : '<p class="help-text">Choose your completed activity file and submit it to your teacher.</p>'}<form onsubmit="event.preventDefault(); submitLearningFile(this, '${material.id}')"><fieldset><label class="sr-only" for="submission-${material.id}">Activity file for ${esc(material.title)}</label><input id="submission-${material.id}" name="file" type="file" accept="${LEARNING_FILE_ACCEPT}" required><small class="help-text">PDF, Word, PowerPoint, or Excel. Maximum 25 MB.</small><p class="learning-form-status" role="status"></p><button class="btn" type="submit">${material.mySubmission ? "Replace submission" : "Submit activity file"}</button></fieldset></form></div>` : ""}</article>`).join("");
+   const selected = materials.find(item => item.id === state.learningSelectedMaterial);
+   return `<div class="wrap"><div class="wrap-inner wide"><section id="materials"><div class="section-title-row"><div><span class="eyebrow">YOUR CLASSROOM FILES</span><h1>Lecture materials</h1><p>${teacher ? "Share lecture files and collect completed activities from your classes." : "Read your class materials and submit your completed activities here."}</p></div><button class="btn secondary" onclick="openLearningWorkspace()">Refresh</button></div><p class="help-text">PDFs open in your browser. Word, PowerPoint, and Excel files download to open in an installed app.</p>${state.learningError ? `<div class="banner" role="alert">${esc(state.learningError)}</div>` : ""}${state.learningNotice ? `<div class="conn-banner" role="status">${esc(state.learningNotice)}</div>` : ""}${teacher ? renderLectureUploadForm() : ""}${selected && Array.isArray(state.learningSubmissions) ? `<section class="sheet learning-received" aria-label="Activity submissions"><div class="section-title-row"><div><span class="eyebrow">STUDENT SUBMISSIONS</span><h2>${esc(selected.title)}</h2></div><button class="btn secondary" onclick="state.learningSelectedMaterial=null; state.learningSubmissions=null; render()">Close</button></div>${state.learningSubmissions.length ? state.learningSubmissions.map(item => `<article class="learning-received-row" data-submission-id="${esc(item.id)}" tabindex="-1"><h3>${esc(item.name || "Student")} &middot; ${esc(item.rollNo)}</h3><p class="meta">${esc(item.department)} &middot; ${esc(item.yearLevel)}, Section ${esc(item.section)} &middot; ${esc(new Date(item.submittedAt).toLocaleString())}</p>${learningFileLinks(item)}</article>`).join("") : '<div class="empty">No files submitted yet.</div>'}</section>` : ""}<div class="learning-list">${cards || `<div class="empty">${uiIcon("file")}<h2>No lecture materials yet</h2><p>${teacher ? "Share a file above to make it available to your students." : "Materials shared with your class will appear here."}</p></div>`}</div></section></div></div>`;
+}
+function checkLearningFile(form) {
+   const file = form.querySelector('input[type="file"]').files[0];
+   if (!file) throw new Error("Choose a file first.");
+   if (!file.size || file.size > 25 * 1024 * 1024) throw new Error("Choose a non-empty file of 25 MB or smaller.");
+   if (!LEARNING_FILE_ACCEPT.split(",").some(extension => file.name.toLowerCase().endsWith(extension))) throw new Error("Choose a PDF, Word, PowerPoint, or Excel file.");
+}
+async function sendLearningForm(form, path, data, notice) {
+   const status = form.querySelector(".learning-form-status");
+   const fieldset = form.querySelector("fieldset");
+   const user = state.currentUser;
+   let uploaded = false;
+   try {
+      checkLearningFile(form);
+      fieldset.disabled = true; status.textContent = "Uploading file. Please keep this page open…";
+      await apiRequest("POST", path, data);
+      uploaded = true;
+      if (state.currentUser !== user) return;
+      const materials = await apiRequest("GET", "/api/learning/materials");
+      if (state.currentUser !== user) return;
+      state.learningMaterials = materials; state.learningNotice = notice; state.learningError = "";
+      state.learningSelectedMaterial = null; state.learningSubmissions = null;
+      render();
+   } catch (error) { status.textContent = uploaded ? `${notice} Use Refresh to load the latest files. ${error.message}` : error.message; status.setAttribute("role", "alert"); }
+   finally { fieldset.disabled = false; }
+}
+async function publishLectureMaterial(form) {
+   const data = new FormData(form);
+   const targetClasses = learningTargetClasses(form);
+   if (!targetClasses.length || targetClasses.length > 120) { const status = form.querySelector(".learning-form-status"); status.textContent = "Select between 1 and 120 classes, using the department, year level, and section checkboxes."; status.setAttribute("role", "alert"); return; }
+   data.set("targetClasses", JSON.stringify(targetClasses));
+   data.set("requiresSubmission", String(form.elements.requiresSubmission.checked));
+   await sendLearningForm(form, "/api/learning/materials", data, "Material shared with your students.");
+}
+async function submitLearningFile(form, materialId) {
+   await sendLearningForm(form, `/api/learning/materials/${encodeURIComponent(materialId)}/submissions`, new FormData(form), "Your activity file was submitted successfully.");
+}
+async function openLearningSubmissions(materialId) {
+   const user = state.currentUser;
+   try {
+      const submissions = await apiRequest("GET", `/api/learning/materials/${encodeURIComponent(materialId)}/submissions`);
+      if (state.currentUser !== user || state.view !== "learningHome") return;
+      state.learningSubmissions = submissions;
+      state.learningSelectedMaterial = materialId; state.learningError = "";
+      render(); document.querySelector(".learning-received")?.scrollIntoView({behavior:"smooth"});
+   } catch (error) { state.learningError = error.message; render(); }
+}
+function deleteLectureMaterial(materialId) {
+   showModal({title:"Delete lecture material?", message:"This removes the shared file and all activity submissions for this material.", confirmLabel:"Delete material", cancelLabel:"Cancel", onConfirm:async () => {
+      try { await apiRequest("DELETE", `/api/learning/materials/${encodeURIComponent(materialId)}`); await openLearningWorkspace(); }
+      catch (error) { state.learningError = error.message; render(); }
+   }});
+}
+
+
+
+
+/* ============================= STATE ============================= */
+let state = {
+  view: new URLSearchParams(window.location.search).has("signup") ? "studentSignup" : "landing",
+  currentUser: null,         // {name, rollNo, department, section, yearLevel}
+  exams: [],
+  learningMaterials: [],
+  myResults: [],
+  runtime: null,
+  savedAttempt: null,
+  draftSaveError: "",
+  draftRecoveryMessage: "",
+  lastResult: null,
+  studentReview: null,
+  studentReviewError: "",
+  studentReviewLoading: false,
+  errorMsg: "",
+  successMsg: "",
+  connError: "",
+  submitting: false,
+};
+
+const SCHOOL_OPTIONS = window.ARALHUB_SCHOOL_OPTIONS || {};
+const PASSING_PERCENT = 50;
+const DEPARTMENTS = SCHOOL_OPTIONS.departments?.length ? SCHOOL_OPTIONS.departments : ["BSIT", "BSCRIM", "BEED", "BSHM", "BSN"];
+const YEAR_LEVELS = ["1st Year", "2nd Year", "3rd Year", "4th Year"];
+const SECTIONS_BY_DEPARTMENT = SCHOOL_OPTIONS.sections_by_department || {};
+const SECTIONS_BY_YEAR = SCHOOL_OPTIONS.sections_by_department_and_year || {};
+const SECTIONS = SCHOOL_OPTIONS.section?.length ? SCHOOL_OPTIONS.section : ["A", "B", "C", "D", "E", "F"];
+function sectionsForDepartment(department, year) {
+  if (year && SECTIONS_BY_YEAR[department]) return SECTIONS_BY_YEAR[department][year] || [];
+  return SECTIONS_BY_DEPARTMENT[department] || (DEPARTMENTS.includes(department) ? SECTIONS : []);
+}
+function resultPercent(result) {
+  if (result.percent !== undefined && result.percent !== null && Number.isFinite(Number(result.percent))) return Number(result.percent);
+  return result.total ? Number(result.score || 0) / Number(result.total) * 100 : 0;
+}
+function resultGradeLabel(result) {
+  return resultPercent(result) < PASSING_PERCENT ? "Failed" : "Passed";
+}
+
+function setView(v, extra) { state.errorMsg = ""; state.successMsg = ""; state.view = v; if (extra) Object.assign(state, extra); render(); }
+
+/* ============================= TOPBAR ============================= */
+async function logout() {
+  if (state.runtime && state.runtime.timerId) clearInterval(state.runtime.timerId);
+  try { await apiRequest("POST", "/api/logout"); } catch (err) {}
+  state.runtime = null; state.currentUser = null;
+  state.learningMaterials = []; state.learningSubmissions = null;
+  navigateToPortal("/login");
+}
+
+/* ============================= LANDING ============================= */
+function renderLanding() {
+  return `<div class="landing-page-shell">
+    <nav class="landing-nav" aria-label="Main navigation"><a class="landing-logo" href="index.html"><span class="brand-logo-frame"><img src="images/wallpapercdk.png" alt="AbieksExamSys logo"></span><strong>AbieksExamSys</strong></a></nav>
+    <main id="mainContent" class="landing-main"><div class="landing-copy"><span class="landing-eyebrow"><span></span> A BETTER SPACE TO LEARN</span><h1>Your classroom.<br><em>One clear workspace.</em></h1><p class="lead">Find your assigned exams and quizzes, complete your assessments, and keep track of your scores.</p><div class="landing-cta"><button class="btn" onclick="navigateToPortal('/login')">Sign in ${uiIcon("arrow")}</button><button class="btn secondary" onclick="setView('studentSignup')">Create an account</button></div><div class="landing-proof"><span class="proof-icon">${uiIcon("shield")}</span><div><strong>Built around your classroom.</strong><span>A focused experience, from the first question to your final result.</span></div></div></div>
+    <div class="learning-visual" aria-label="AbieksExamSys assessment features"><div class="visual-orbit orbit-one"></div><div class="visual-orbit orbit-two"></div><div class="visual-note">${uiIcon("spark")} A little focus goes a long way.</div><div class="visual-card"><div class="visual-card-top"><span class="visual-book">${uiIcon("book")}</span><span class="badge open">YOUR LEARNING SPACE</span></div><h2>Ready when<br>you are.</h2><p>One workspace. Every possibility.</p><div class="visual-feature">${uiIcon("check")} Exams & quizzes <span>01</span></div><div class="visual-feature">${uiIcon("check")} Four ways to show what you know <span>02</span></div><div class="visual-feature">${uiIcon("check")} Submissions & progress <span>03</span></div></div><div class="visual-float">${uiIcon("check")}<div><strong>Small steps. Real progress.</strong><span>Your next achievement is ahead.</span></div></div></div></main>
+    <footer class="landing-footer"><span>AbieksExamSys &middot; Colegio de Kidapawan</span><div><span>Learn with focus.</span><span>Grow with confidence.</span></div></footer></div>`;
+}
+
+/* ============================= STUDENT SIGN UP ============================= */
+function renderStudentSignup() {
+  const options = DEPARTMENTS.map(d => `<option value="${esc(d)}">${esc(d)}</option>`).join("");
+  return `
+  <div class="wrap auth-wrap"><div class="wrap-inner auth-inner">
+
+    <form class="sheet auth-card" onsubmit="event.preventDefault(); submitAuthForm(this, doStudentSignup)">
+      <div class="auth-brand"><span class="brand-logo-frame"><img src="images/wallpapercdk.png" alt="AbieksExamSys logo"></span><span>AbieksExamSys</span></div>
+      <div class="auth-heading"><span class="eyebrow">Student registration</span><h2>Create your account</h2><div class="meta">Enter your name, program, year level, and section to find your class assessments.</div></div>
+      ${state.errorMsg ? `<div class="banner">${esc(state.errorMsg)}</div>` : ""}
+      <div class="field"><label for="up_first_name">First name</label><input id="up_first_name" type="text" placeholder="e.g. Juan" autocomplete="given-name" maxlength="255" /></div>
+      <div class="field"><label for="up_last_name">Last name</label><input id="up_last_name" type="text" placeholder="e.g. Dela Cruz" autocomplete="family-name" maxlength="255" /></div>
+      <div class="field"><label for="up_middle_initial">Middle initial <span class="help-text">(optional)</span></label><input id="up_middle_initial" type="text" placeholder="e.g. P" maxlength="2" /><small class="help-text">Enter one letter, or leave blank if you have no middle initial.</small></div>
+      <div class="field"><label>ID Number</label><input id="up_roll" type="text" placeholder="e.g. 21CS045" /></div>
+      <div class="field"><label>Program / Department</label>
+        <select id="up_dept" onchange="updateSignupSections('')">
+          <option value="">Select program / department</option>
+          ${options}
+        </select>
+      </div>
+      <div class="field"><label>Year level</label>
+        <select id="up_year" onchange="updateSignupSections('')">
+          <option value="">Select year level</option>
+          ${YEAR_LEVELS.map(year => `<option value="${esc(year)}">${esc(year)}</option>`).join("")}
+        </select>
+      </div>
+      <div class="field"><label id="signupSectionLabel">Section</label>
+        <select id="up_section" disabled>
+          <option value="">Select section</option>
+        </select>
+      </div>
+      <div class="field"><label>Password</label><input id="up_password" type="password" placeholder="At least 4 characters" autocomplete="new-password" /></div>
+      <div class="field"><label>Confirm password</label><input id="up_password2" type="password" placeholder="Re-enter your password" autocomplete="new-password" /></div>
+      <button type="submit" class="btn block auth-submit">Create student account</button>
+    </form>
+    <button class="back-link" onclick="navigateToPortal('/login')">Already have an account? Sign in</button>
+    <button class="back-link" onclick="setView('landing')">&larr; Back</button>
+  </div></div>`;
+}
+function updateSignupSections(savedSection) {
+  const department = document.getElementById("up_dept").value;
+  const year = document.getElementById("up_year").value;
+  const sectionSelect = document.getElementById("up_section");
+  const selected = typeof savedSection === "string" ? savedSection : sectionSelect.value;
+  const sections = department && year ? sectionsForDepartment(department, year) : [];
+  sectionSelect.innerHTML = `<option value="">${sections.length ? "Select section" : !department ? "Select department first" : "Select year level first"}</option>${sections.map(section => `<option value="${esc(section)}">${esc(department)} ${YEAR_LEVELS.indexOf(year) + 1}-${esc(section)}</option>`).join("")}`;
+  sectionSelect.value = sections.includes(selected) ? selected : "";
+  sectionSelect.disabled = sections.length === 0;
+  document.getElementById("signupSectionLabel").textContent = department && year ? `Section · ${department} · ${year}` : "Section";
+}
+async function doStudentSignup() {
+  const firstName = document.getElementById("up_first_name").value.trim();
+  const lastName = document.getElementById("up_last_name").value.trim();
+  const middleInitial = document.getElementById("up_middle_initial").value.trim();
+  const roll = document.getElementById("up_roll").value.trim();
+  const department = document.getElementById("up_dept").value;
+  const section = document.getElementById("up_section").value;
+  const yearLevel = document.getElementById("up_year").value;
+  const password = document.getElementById("up_password").value;
+  const password2 = document.getElementById("up_password2").value;
+  if (!firstName || !lastName || !roll) { state.errorMsg = "Please enter your first name, last name, and ID number."; render(); return; }
+  if (middleInitial && !/^\p{L}\.?$/u.test(middleInitial)) {
+    state.errorMsg = "Middle initial must be one letter, optionally followed by a period.";
+    render(); return;
+  }
+  if (!DEPARTMENTS.includes(department)) { state.errorMsg = "Please select your department."; render(); return; }
+  if (!YEAR_LEVELS.includes(yearLevel)) { state.errorMsg = "Please select your year level."; render(); return; }
+  if (!sectionsForDepartment(department, yearLevel).includes(section)) { state.errorMsg = "Please select a valid section for your department and year level."; render(); return; }
+  if (password.length < 4) { state.errorMsg = "Password must be at least 4 characters."; render(); return; }
+  if (password !== password2) { state.errorMsg = "Passwords do not match."; render(); return; }
+  try {
+    await apiRequest("POST", "/api/students/signup", { firstName, lastName, middleInitial, rollNo: roll, department, section, yearLevel, password });
+    navigateToPortal("/login?registered=1");
+  } catch (err) {
+    state.errorMsg = err.message || "Could not sign up. Please try again.";
+    render();
+  }
+}
+
+/* ============================= STUDENT SIGN IN ============================= */
+function renderStudentLogin() { return renderPortalLogin("doStudentLogin"); }
+async function doStudentLogin() { await doPortalLogin(); }
+
+/* ============================= STUDENT HOME ============================= */
+async function goStudentHome() {
+  state.connError = "";
+  state.studentLiveBlocked = false;
+  state.draftRecoveryMessage = "";
+  state.draftSaveError = "";
+  state.savedAttempt = readSavedAttempt();
+  try {
+    state.exams = await apiRequest("GET", "/api/exams?studentView=1");
+    state.myResults = await apiRequest("GET", `/api/results?rollNo=${encodeURIComponent(state.currentUser.rollNo)}`);
+    if (state.savedAttempt && state.myResults.some(result => result.examId === state.savedAttempt.examId)) {
+      clearSavedAttempt();
+      state.savedAttempt = null;
+      state.draftRecoveryMessage = "A saved attempt was already submitted, so its local copy was cleared.";
+    } else if (state.savedAttempt && !state.exams.some(exam => exam.id === state.savedAttempt.examId)) {
+      clearSavedAttempt();
+      state.savedAttempt = null;
+      state.draftRecoveryMessage = "A saved attempt is no longer available because this assessment is not assigned to your account.";
+    }
+  } catch (err) {
+    if (handleStudentSessionFailure(err)) return;
+    state.studentLiveBlocked = !!err.status && err.status < 500;
+    state.connError = err.status ? (err.message || "The server could not load your workspace. Try again.") : "Could not reach the server. Reconnecting automatically; your saved answers are kept.";
+  }
+  setView("studentHome");
+}
+function renderStudentHome() {
+  const rows = state.exams.map(ex => {
+    const isQuiz = ex.activityType === "quiz";
+    const attempts = state.myResults.filter(result => result.examId === ex.id).sort((a, b) => (b.percent || 0) - (a.percent || 0));
+    const result = attempts[0];
+    const hasSavedAttempt = state.savedAttempt?.examId === ex.id;
+    return `<article class="exam-row" data-activity="${isQuiz ? "quiz" : "exam"}" data-search="${esc((ex.title + ' ' + (ex.subject || '')).toLowerCase())}"><div class="activity-card-top"><span class="activity-icon ${isQuiz ? "mint" : "violet"}">${uiIcon(isQuiz ? "spark" : "file")}</span><span class="badge ${result ? "done" : "open"}">${result ? "Submitted" : ex.returned ? "Returned by teacher" : isQuiz ? "Quiz" : "Exam"}</span></div><div class="info"><span class="activity-subject">${esc(ex.subject || "Class assessment")}</span><strong>${esc(ex.title)}</strong><span>${esc(ex.yearLevel || "All years")} &middot; ${ex.sectionScope === "ALL" ? "All sections" : `Section ${esc(ex.sectionScope || "")}`}</span></div><div class="activity-meta"><span>${uiIcon("file")} ${ex.questionCount} items</span><span>${uiIcon("clock")} ${ex.duration} min</span></div><div class="activity-card-footer">${result ? `<span class="score-label">${result.score}<small> / ${result.total} points</small><small> · ${resultPercent(result).toFixed(1)}%</small></span><span class="grade-status ${resultGradeLabel(result) === "Passed" ? "passed" : "failed"}">${resultGradeLabel(result)}</span>` : `<span class="ready-label"><i></i> ${hasSavedAttempt ? "Saved on this device" : ex.returned ? "Your answers are preserved" : "Ready to start"}</span><button class="btn" onclick="${hasSavedAttempt ? `resumeSavedAttempt('${ex.id}')` : `beginExam('${ex.id}')`}">${hasSavedAttempt ? "Resume saved attempt" : `${ex.returned ? "Continue" : "Start"} ${isQuiz ? "quiz" : "exam"}`} ${uiIcon("arrow")}</button>`}</div>${result ? '<div class="card-note">Ask your teacher to return this assessment if you submitted by accident.</div>' : ""}</article>`;
+  }).join("");
+  return `<div class="wrap student-assessments-wrap"><div class="wrap-inner wide"><section id="activities" class="student-assessments"><div class="section-title-row"><div><span class="eyebrow">YOUR LEARNING SPACE</span><h1>My assessments</h1><p>Welcome back, ${esc(state.currentUser.name)}. Your assigned exams and quizzes are here.</p></div><div class="learning-card-actions"><span class="count-label">${state.exams.length} activities</span><button class="btn secondary" onclick="openLearningWorkspace()">${uiIcon("file")} Lecture materials</button></div></div>
+  ${state.draftRecoveryMessage ? `<div class="conn-banner" role="status">${esc(state.draftRecoveryMessage)}</div>` : ""}
+  ${state.draftSaveError ? `<div class="conn-banner" role="alert">${esc(state.draftSaveError)}</div>` : ""}
+  ${state.connError ? `<div class="conn-banner"><span>${esc(state.connError)}</span><button class="btn secondary" onclick="goStudentHome()">Try again</button></div>` : ""}
+  ${state.exams.length ? `${renderActivityTools()}<div class="exam-list">${rows}</div><div id="activityNoMatches" class="empty" hidden>No activities match your search. Try another title or subject.</div>` : `<div class="empty student-assessments-empty">${uiIcon("book")}<h2>No assessments yet</h2><p>Your teacher's assigned exams and quizzes will appear here.</p></div>`}</section></div></div>`;
+}
+
+/* ============================= TAKE EXAM ============================= */
+function savedAttemptStorageKey() {
+  return `aralhub:student-attempt:${encodeURIComponent(state.currentUser.rollNo)}`;
+}
+function readSavedAttempt() {
+  if (!state.currentUser?.rollNo) return null;
+  try {
+    const raw = localStorage.getItem(savedAttemptStorageKey());
+    if (!raw) return null;
+    const attempt = JSON.parse(raw);
+    if (!attempt || attempt.version !== 1 || typeof attempt.examId !== "string" || !attempt.answers || typeof attempt.answers !== "object" || Array.isArray(attempt.answers) || !Number.isFinite(attempt.deadlineAt) || typeof attempt.submissionId !== "string") {
+      localStorage.removeItem(savedAttemptStorageKey());
+      state.draftRecoveryMessage = "An unreadable saved attempt was cleared. You can start the assessment again.";
+      return null;
+    }
+    return attempt;
+  } catch (err) {
+    state.draftSaveError = "Saved answers could not be read from this browser. Your attempt may not be recoverable.";
+    return null;
+  }
+}
+function saveCurrentAttempt() {
+  if (!state.runtime || !state.currentUser?.rollNo) return;
+  const rt = state.runtime;
+  const question = rt.exam.questions[rt.currentIdx];
+  try {
+    localStorage.setItem(savedAttemptStorageKey(), JSON.stringify({
+      version: 1,
+      examId: rt.exam.id,
+      answers: rt.answers,
+      currentQuestionId: question?.id || "",
+      deadlineAt: rt.deadlineAt,
+      submissionId: rt.submissionId,
+      focusDeadlineAt: rt.focusDeadlineAt || null,
+      pendingSubmission: rt.pendingSubmission || null,
+      returnId: rt.returnId || null
+    }));
+    state.draftSaveError = "";
+  } catch (err) {
+    state.draftSaveError = "Your answers could not be saved on this device. Keep this page open; a power loss may erase them.";
+  }
+}
+function clearSavedAttempt() {
+  if (!state.currentUser?.rollNo) return;
+  try {
+    localStorage.removeItem(savedAttemptStorageKey());
+  } catch (err) {
+    state.draftSaveError = "The saved attempt could not be cleared from this browser.";
+  }
+}
+function createSubmissionId() {
+  return Array.from(crypto.getRandomValues(new Uint32Array(4)), n => n.toString(16).padStart(8, "0")).join("");
+}
+async function beginExam(examId) {
+  const activity = state.exams.find(exam => exam.id === examId);
+  if (state.myResults.some(result => result.examId === examId)) {
+    showModal({
+      title: activity?.activityType === "quiz" ? "Awaiting teacher return" : "Already attempted",
+      message: activity?.activityType === "quiz"
+        ? "Your quiz has been submitted. You can take it again after your teacher returns it."
+        : "You have already attempted this exam."
+    });
+    return;
+  }
+  let exam;
+  try { exam = await apiRequest("GET", `/api/exams/${examId}/take`); }
+  catch (err) { showModal({ title: "Could not start exam", message: err.message }); return; }
+  const validIds = new Set(exam.questions.map(question => question.id));
+  const answers = Object.fromEntries(Object.entries(exam.returnedAttempt?.answers || {}).filter(([id]) => validIds.has(id)));
+  state.runtime = { exam, answers, secondsLeft: exam.duration * 60, deadlineAt: Date.now() + exam.duration * 60 * 1000, submissionId: createSubmissionId(), currentIdx: 0, timerId: null, tabSwitchSubmitted: false };
+  state.runtime.returnId = exam.returnedAttempt?.returnId || null;
+  state.draftSaveError = "";
+  saveCurrentAttempt();
+  if (exam.activityType === "quiz") history.pushState({ aralHubQuiz: exam.id }, "", window.location.href);
+  setView("takeExam");
+  state.runtime.timerId = setInterval(tickTimer, 1000);
+}
+async function resumeSavedAttempt(examId) {
+  const saved = state.savedAttempt;
+  if (!saved || saved.examId !== examId) return;
+  let exam;
+  try { exam = await apiRequest("GET", `/api/exams/${examId}/take`); }
+  catch (err) { showModal({ title: "Could not resume assessment", message: err.message || "Reconnect to the system and try again. Your saved answers remain on this device." }); return; }
+  if (exam.returnedAttempt && saved.returnId !== exam.returnedAttempt.returnId) {
+    clearSavedAttempt();
+    state.savedAttempt = null;
+    return beginExam(examId);
+  }
+  const remaining = Math.max(0, Math.ceil((saved.deadlineAt - Date.now()) / 1000));
+  const currentIdx = Math.max(0, exam.questions.findIndex(question => question.id === saved.currentQuestionId));
+  const questionIds = new Set(exam.questions.map(question => question.id));
+  const answers = Object.fromEntries(Object.entries(saved.answers).filter(([questionId]) => questionIds.has(questionId)));
+  state.runtime = { exam, answers, secondsLeft: remaining, deadlineAt: saved.deadlineAt, submissionId: saved.submissionId, currentIdx, timerId: null, tabSwitchSubmitted: false, focusDeadlineAt: saved.focusDeadlineAt || null, pendingSubmission: saved.pendingSubmission || null };
+  state.runtime.returnId = saved.returnId || null;
+  state.draftSaveError = "";
+  if (exam.activityType === "quiz") history.pushState({ aralHubQuiz: exam.id }, "", window.location.href);
+  setView("takeExam");
+  state.runtime.timerId = setInterval(tickTimer, 1000);
+  tickTimer();
+}
+function tickTimer() {
+  if (!state.runtime) return;
+  if (state.runtime.pendingSubmission) {
+    if (!state.submitting && Date.now() >= (state.runtime.retryAt || 0)) submitExam(true, state.runtime.pendingSubmission);
+    return;
+  }
+  if (state.runtime.focusDeadlineAt) {
+    if (Date.now() >= state.runtime.focusDeadlineAt) { submitExam(true, "tab_switch"); return; }
+    const countdown = document.getElementById("focusCountdown");
+    if (countdown) countdown.textContent = Math.max(0, Math.ceil((state.runtime.focusDeadlineAt - Date.now()) / 1000));
+  }
+  state.runtime.secondsLeft = Math.max(0, Math.ceil((state.runtime.deadlineAt - Date.now()) / 1000));
+  if (state.runtime.secondsLeft <= 0) {
+    state.runtime.secondsLeft = 0;
+    clearInterval(state.runtime.timerId);
+    submitExam(true);
+    return;
+  }
+  updateTimerDom();
+}
+function updateTimerDom() {
+  const el = document.getElementById("timerDisplay");
+  if (!el || !state.runtime) return;
+  el.textContent = fmtTime(state.runtime.secondsLeft);
+  el.classList.toggle("low", state.runtime.secondsLeft <= 60);
+}
+const FOCUS_WARNING_SECONDS = 10;
+function warnAssessmentFocus() {
+  const runtime = state.runtime;
+  if (!runtime || state.view !== "takeExam" || state.submitting || runtime.pendingSubmission || runtime.focusDeadlineAt) return;
+  runtime.focusDeadlineAt = Date.now() + FOCUS_WARNING_SECONDS * 1000;
+  saveCurrentAttempt();
+  render();
+}
+function handleVisibilityChange() {
+  if (document.hidden) warnAssessmentFocus();
+  else if (state.runtime?.focusDeadlineAt) tickTimer();
+}
+function acknowledgeAssessmentFocus() {
+  if (!state.runtime?.focusDeadlineAt || document.hidden || !document.hasFocus()) return;
+  if (Date.now() >= state.runtime.focusDeadlineAt) { tickTimer(); return; }
+  state.runtime.focusDeadlineAt = null;
+  saveCurrentAttempt();
+  render();
+}
+function renderFocusWarning() {
+  const runtime = state.runtime;
+  if (!runtime?.focusDeadlineAt || state.submitting || runtime.pendingSubmission) return "";
+  return `<div class="assessment-warning-backdrop"><section class="assessment-warning" role="alertdialog" aria-modal="true" aria-labelledby="focusWarningTitle" aria-describedby="focusWarningMessage"><span class="activity-icon amber">${uiIcon("shield")}</span><h2 id="focusWarningTitle">Return to your assessment</h2><p id="focusWarningMessage">Leaving this tab, switching apps with Alt+Tab, or minimizing the window is restricted. Return and select Continue before the countdown ends, or your current answers will be submitted automatically.</p><div class="focus-countdown"><strong id="focusCountdown">${Math.max(0, Math.ceil((runtime.focusDeadlineAt - Date.now()) / 1000))}</strong><span>seconds remaining</span></div><button type="button" class="btn" onclick="acknowledgeAssessmentFocus()">Continue assessment</button></section></div>`;
+}
+function handleQuizBackNavigation() {
+  const runtime = state.runtime;
+  if (!runtime || runtime.exam.activityType !== "quiz") return;
+  history.pushState({ aralHubQuiz: runtime.exam.id }, "", window.location.href);
+  showModal({
+    title: "Quiz in progress",
+    message: "Browser Back is disabled while your quiz is active. Submit the quiz when you are finished."
+  });
+}
+function renderTakeExam() {
+  const rt = state.runtime;
+  const exam = rt.exam;
+  const q = exam.questions[rt.currentIdx];
+  const total = exam.questions.length;
+  const pointsPerQuestion = assessmentPoints(exam, q);
+  const answeredCount = answeredQuestionCount(rt);
+  const isQuiz = exam.activityType === "quiz";
+  const partLabels = {
+    1: "Part 1 - Multiple Choice",
+    2: "Part 2 - Identification",
+    3: "Part 3 - True or False",
+    4: "Part 4 - Matching Type",
+  };
+  const typeParts = { multiple_choice: 1, identification: 2, true_false: 3, matching: 4 };
+  const partFor = question => {
+    const part = Number(question.part);
+    return partLabels[part] ? part : typeParts[question.type] || 1;
+  };
+  const questionsByPart = new Map();
+  exam.questions.forEach((question, index) => {
+    const part = partFor(question);
+    if (!questionsByPart.has(part)) questionsByPart.set(part, []);
+    questionsByPart.get(part).push({ question, index });
+  });
+  const questionNumbers = new Map();
+  for (const questions of questionsByPart.values()) {
+    questions.forEach(({ index }, partIndex) => questionNumbers.set(index, partIndex + 1));
+  }
+  const navBtns = [...questionsByPart.entries()].map(([part, questions]) => `
+    <section class="qnav-part" aria-label="${partLabels[part]}">
+      <strong class="qnav-part-heading">${partLabels[part]}</strong>
+      <div class="qnav-part-buttons">${questions.map(({ question, index }, partIndex) => {
+        let cls = "";
+        if (index === rt.currentIdx) cls = "current";
+        const answered = rt.answers[question.id] !== undefined && String(rt.answers[question.id]).trim() !== "";
+        if (answered) cls += " answered";
+        const number = partIndex + 1;
+        return `<button id="question-nav-${index}" class="${cls}" onclick="jumpTo(${index})" ${index === rt.currentIdx ? 'aria-current="step"' : ""} aria-label="${partLabels[part]}, question ${number}${answered ? ', answered' : ', not answered'}" title="${partLabels[part]} · Question ${number}"><span>${number}</span>${answered ? "<b>✓</b>" : ""}</button>`;
+      }).join("")}</div>
+    </section>`).join("");
+  const opts = q.type === "identification" ? `
+    <label for="identification-answer" class="answer-label">Your answer</label><input id="identification-answer" class="identification-input" type="text" autocomplete="off" style="text-transform:uppercase" placeholder="Type your answer here" value="${esc(rt.answers[q.id] || "")}" oninput="setIdentificationAnswer('${q.id}', this.value)" />` : q.options.map((o, oi) => `
+    <label class="option ${rt.answers[q.id] === oi ? "selected" : ""}">
+      <input id="answer-${q.id}-${oi}" type="radio" name="qopt" ${rt.answers[q.id] === oi ? "checked" : ""} onchange="selectAnswer('${q.id}', ${oi})" />
+      <span class="otext">${q.type === "matching" ? `${String.fromCharCode(65 + oi)}. ` : ""}${esc(o)}</span>
+    </label>`).join("");
+  const currentPart = partFor(q);
+  const partLabel = partLabels[currentPart];
+  const questionsInPart = questionsByPart.get(currentPart).length;
+  const submitLabel = isQuiz ? "Submit quiz" : "Submit exam";
+  return `
+  <div class="wrap exam-take-wrap"><div class="wrap-inner exam-shell">
+    <div class="exam-topbar">
+      <div class="exam-heading"><span class="eyebrow">${isQuiz ? "Quiz" : "Exam"} · ${esc(exam.subject || "Class activity")}</span><h2>${esc(exam.title)}</h2><div class="exam-context">${esc(exam.yearLevel || "All years")} · ${exam.sectionScope === "ALL" ? "All sections" : `Section ${esc(exam.sectionScope)}`} · <span data-answer-count>${answeredCount} of ${total} answered</span> · Leaving this window starts a 10-second submission warning · ${assessmentScoringLabel(exam)} · Answers saved on this device</div></div>
+      <div class="timer-wrap"><span class="timer-caption">Time remaining</span><div id="timerDisplay" role="timer" aria-live="off" class="timer ${rt.secondsLeft <= 60 ? 'low' : ''}">${fmtTime(rt.secondsLeft)}</div></div>
+    </div>
+    ${state.draftSaveError ? `<div class="conn-banner" role="alert">${esc(state.draftSaveError)}</div>` : ""}
+    <div class="progress-track" role="progressbar" aria-label="Questions answered" aria-valuemin="0" aria-valuemax="${total}" aria-valuenow="${answeredCount}"><div class="progress-fill" style="width:${(answeredCount / total * 100) || 0}%"></div></div>
+    <div class="exam-stage"><div class="question-block" data-active-question="${esc(q.id)}" role="region" aria-label="Current question" tabindex="0"><div class="question-kicker"><span class="part-label">${partLabel}</span><span class="question-count">Question ${questionNumbers.get(rt.currentIdx)} of ${questionsInPart} · ${pointsPerQuestion} ${pointsPerQuestion === 1 ? "point" : "points"}</span></div><div class="qtext">${esc(q.text)}</div>${q.type === "matching" ? '<p class="help-text">Choose the correct match for this item.</p>' : ""}${opts}</div>
+    <nav class="question-navigator" aria-label="Question navigation"><div class="navigator-heading"><strong>Questions</strong><span>${total} total</span></div><div class="qnav">${navBtns}</div><div class="navigator-legend"><i class="legend-dot answered-dot"></i> Answered <i class="legend-dot"></i> Unanswered</div></nav></div>
+    <div class="exam-nav-row">
+      <div>
+        <button id="examPrevious" class="btn secondary" ${rt.currentIdx === 0 ? "disabled" : ""} onclick="jumpTo(${rt.currentIdx - 1})">&larr; Previous</button>
+        ${rt.currentIdx < total - 1 ? `<button id="examNext" class="btn" onclick="jumpTo(${rt.currentIdx + 1})">Next &rarr;</button>` : ``}
+      </div>
+      <button id="examSubmit" class="btn" ${state.submitting ? "disabled" : ""} onclick="confirmSubmit()">${state.submitting ? "Saving..." : submitLabel}</button>
+    </div>
+  </div></div>`;
+}
+function selectAnswer(qid, idx) { if (!state.runtime || state.submitting || state.runtime.pendingSubmission || state.runtime.focusDeadlineAt) return; state.runtime.answers[qid] = idx; saveCurrentAttempt(); render(); }
+function setIdentificationAnswer(qid, value) {
+  if (!state.runtime || state.submitting || state.runtime.pendingSubmission || state.runtime.focusDeadlineAt) return;
+  value = value.toUpperCase();
+  state.runtime.answers[qid] = value;
+  saveCurrentAttempt();
+  const questionIndex = state.runtime.exam.questions.findIndex(q => q.id === qid);
+  const navButton = document.getElementById(`question-nav-${questionIndex}`);
+  if (navButton) {
+    const answered = value.trim() !== "";
+    navButton.classList.toggle("answered", answered);
+    navButton.setAttribute("aria-label", `Question ${questionIndex + 1}, ${answered ? "answered" : "not answered"}`);
+    navButton.querySelector("b")?.remove();
+    if (answered) navButton.insertAdjacentHTML("beforeend", "<b>✓</b>");
+  }
+  const answeredCount = answeredQuestionCount(state.runtime);
+  const total = state.runtime.exam.questions.length;
+  document.querySelectorAll("[data-answer-count]").forEach(label => { label.textContent = `${answeredCount} of ${total} answered`; });
+  const progress = document.querySelector('[role="progressbar"]');
+  progress?.setAttribute("aria-valuenow", answeredCount);
+  const fill = progress?.querySelector(".progress-fill");
+  if (fill) fill.style.width = `${answeredCount / total * 100}%`;
+}
+function jumpTo(idx) {
+  if (idx < 0 || idx >= state.runtime.exam.questions.length) return;
+  state.runtime.currentIdx = idx;
+  saveCurrentAttempt();
+  render();
+}
+function confirmSubmit() {
+  if (!state.runtime || state.submitting || state.runtime.pendingSubmission || state.runtime.focusDeadlineAt) return;
+  const total = state.runtime.exam.questions.length;
+  const answered = answeredQuestionCount(state.runtime);
+  const isQuiz = state.runtime.exam.activityType === "quiz";
+  const activityName = isQuiz ? "quiz" : "exam";
+  const msg = answered < total
+    ? `You've answered ${answered} of ${total} questions. Submit this ${activityName} anyway?`
+    : `Submit your ${activityName} now?`;
+  showModal({
+    title: `Submit ${activityName}`,
+    message: msg,
+    confirmLabel: `Submit ${activityName}`,
+    cancelLabel: "Cancel",
+    onConfirm: () => { clearInterval(state.runtime.timerId); submitExam(false); }
+  });
+}
+async function submitExam(autoSubmitted, submitReason = autoSubmitted ? "time_limit" : "manual") {
+  if (state.submitting || !state.runtime) return;
+  state.submitting = true;
+  const rt = state.runtime;
+  const exam = rt.exam;
+  if (rt.timerId) clearInterval(rt.timerId);
+  if (autoSubmitted) rt.pendingSubmission = submitReason;
+  rt.focusDeadlineAt = null;
+  saveCurrentAttempt();
+  if (!rt.submissionId) rt.submissionId = Array.from(crypto.getRandomValues(new Uint32Array(4)), n => n.toString(16).padStart(8, "0")).join("");
+  rt.secondsLeft = Math.max(0, Math.ceil((rt.deadlineAt - Date.now()) / 1000));
+  const timeTakenSec = Math.max(0, exam.duration * 60 - rt.secondsLeft);
+  const payload = { submissionId: rt.submissionId, examId: exam.id, name: state.currentUser.name, rollNo: state.currentUser.rollNo, answers: rt.answers, timeTakenSec, autoSubmitted: !!autoSubmitted, submitReason };
+  render();
+  try {
+    const result = await apiRequest("POST", "/api/results", payload);
+    state.lastResult = result;
+    state.myResults = state.myResults.concat([{ id: result.id, examId: result.examId, examTitle: result.examTitle, activityType: result.activityType || exam.activityType || "exam", score: result.score, total: result.total, percent: result.percent }]);
+    state.studentReview = null;
+    state.studentReviewError = "";
+    clearSavedAttempt();
+    state.savedAttempt = null;
+    state.runtime = null;
+    state.submitting = false;
+    setView("studentResult");
+    closeModal();
+  } catch (err) {
+    state.submitting = false;
+    if (err.status === 409) {
+      state.runtime = null;
+      await goStudentHome();
+      closeModal();
+      return;
+    }
+    rt.retryAt = Date.now() + 5000;
+    rt.timerId = setInterval(tickTimer, 1000);
+    showModal({ title: "Submission failed", message: (err.message || "Check your connection.") + (autoSubmitted ? " Your answers are saved on this device. Automatic submission will retry when connected." : " Your answers are saved; the assessment timer is still running."), confirmLabel: "Retry submission", onConfirm: () => submitExam(autoSubmitted, submitReason) });
+    render();
+  }
+}
+
+/* ============================= RESULT PAGE ============================= */
+function renderStudentResult() {
+  const r = state.lastResult;
+  if (!r) return `<div class="wrap"><div class="wrap-inner"><div class="empty">Submission not found.</div></div></div>`;
+  const percent = resultPercent(r);
+  const passed = percent >= PASSING_PERCENT;
+  const review = state.studentReview ? state.studentReview.map((question, index) => {
+    const choices = Array.isArray(question.options) ? question.options : [];
+    const answer = question.chosen === null || question.chosen === undefined || question.chosen === ""
+      ? "Not answered"
+      : question.type === "identification" ? question.chosen : choices[question.chosen] || `Option ${Number(question.chosen) + 1}`;
+    const correctAnswer = question.type === "identification"
+      ? question.answer ?? "Not available"
+      : Number.isInteger(question.correct) && question.correct >= 0
+        ? choices[question.correct] ?? `Option ${question.correct + 1}`
+        : "Not available";
+    return `<article class="review-item"><div class="rhead"><div class="rqtext">${index + 1}. ${esc(question.text)}</div><span class="tag ${question.isCorrect ? "correct" : "wrong"}">${question.isCorrect ? "Correct" : "Incorrect"} · ${question.pointsAwarded} / ${question.pointsPossible} points</span></div><div class="aline">Your answer: <b>${esc(answer)}</b></div><div class="aline">Correct answer: <b>${esc(correctAnswer)}</b></div></article>`;
+  }).join("") : "";
+  return `<div class="wrap"><div class="wrap-inner"><button class="back-link" onclick="goStudentHome()">&larr; Back to assessments</button><div class="score-hero"><span class="eyebrow">SUBMISSION RECEIVED</span><h2>Your work is saved.</h2><div class="meta">${esc(r.examTitle || "Assessment")}</div><div class="big">${r.score}<span style="font-size:26px;color:var(--ink-faint);"> / ${r.total} points</span></div><div class="pct">${percent.toFixed(1)}% · <strong class="grade-status ${passed ? "passed" : "failed"}">${passed ? "Passed" : "Failed"}</strong></div><div class="pct">${assessmentScoringLabel(r)} · Time taken ${fmtTime(r.timeTakenSec)}</div></div><button type="button" class="btn secondary" onclick="openStudentResultReview()" ${state.studentReviewLoading ? "disabled" : ""}>${state.studentReviewLoading ? "Loading review..." : state.studentReview ? "Refresh my answer review" : "Review my answers"}</button>${state.studentReviewError ? `<div class="conn-banner" role="alert">${esc(state.studentReviewError)}</div>` : ""}${state.studentReview ? `<section aria-labelledby="studentReviewHeading"><h3 id="studentReviewHeading">Your answer review</h3><p class="help-text">Compare your answers with the correct answers and see your points earned.</p>${review || '<div class="empty">No question review is available.</div>'}</section>` : ""}<p class="help-text">You can review your submitted answers, correct answers, and points here.</p><button class="btn" onclick="goStudentHome()">Back to your workspace ${uiIcon("arrow")}</button></div></div>`;
+}
+async function openStudentResultReview() {
+  const resultId = state.lastResult?.id;
+  if (!resultId || state.studentReviewLoading) return;
+  state.studentReviewLoading = true;
+  state.studentReviewError = "";
+  render();
+  try {
+    const result = await apiRequest("GET", `/api/results/${encodeURIComponent(resultId)}/review`);
+    state.studentReview = result.review || [];
+  } catch (err) {
+    state.studentReviewError = err.message || "Could not load your answer review.";
+  } finally {
+    state.studentReviewLoading = false;
+    render();
+  }
+}
+
+/* ============================= ROUTER / RENDER ============================= */
+function render() {
+  const previous = captureInterfaceState();
+  const previousQuestion = document.querySelector("[data-active-question]");
+  const questionPosition = {id:previousQuestion?.dataset.activeQuestion, top:previousQuestion?.scrollTop || 0};
+  const questionNavPosition = document.querySelector(".qnav")?.scrollTop || 0;
+  let body = "";
+  switch (state.view) {
+    case "learningHome": body = renderLearningWorkspace(); break;
+    case "landing": body = renderLanding(); break;
+    case "studentSignup": body = renderStudentSignup(); break;
+    case "studentLogin": body = renderStudentLogin(); break;
+    case "studentHome": body = renderStudentHome(); break;
+    case "takeExam": body = renderTakeExam(); break;
+    case "studentResult": body = renderStudentResult(); break;
+    default: body = renderLanding();
+  }
+  document.body.className = state.currentUser ? `app-page student-page ${state.view === "studentHome" ? "student-home-page" : ""} ${state.view === "takeExam" ? "exam-in-progress" : ""}` : state.view === "landing" ? "landing-page" : state.view === "studentSignup" ? "auth-page student-signup-page" : "auth-page";
+  const content = state.currentUser ? renderWorkspace(body, "student") : state.view === "landing" ? body : renderAuthLayout(body);
+  document.getElementById("app").innerHTML = content + renderModalHtml() + renderFocusWarning();
+  enhanceInterface(previous);
+  syncStudentLiveUpdates();
+  const workspace = document.querySelector('.workspace');
+  if (workspace) workspace.inert = !!state.runtime && (!!state.runtime.focusDeadlineAt || !!state.runtime.pendingSubmission || state.submitting);
+  document.querySelector('.assessment-warning button')?.focus({preventScroll:true});
+  if (state.view === "takeExam") {
+    const question = document.querySelector("[data-active-question]");
+    if (question && question.dataset.activeQuestion === questionPosition.id) question.scrollTop = questionPosition.top;
+    const questionNav = document.querySelector(".qnav");
+    if (questionNav) {
+      questionNav.scrollTop = questionNavPosition;
+      questionNav.querySelector('[aria-current="step"]')?.scrollIntoView({block:"nearest"});
+    }
+    window.scrollTo({top:0, left:0, behavior:"auto"});
+  }
+  if (state.view === "studentSignup") updateSignupSections(previous?.view === state.view ? previous.fields.find(field => field.id === "up_section")?.value || "" : "");
+}
+let studentLiveTimer = null;
+let studentLiveRequest = null;
+function studentLiveActive() {
+  return !!document.getElementById("app") && !!state.currentUser && !state.studentLiveBlocked && ["studentHome", "studentResult"].includes(state.view) && !document.hidden && !document.querySelector('[role="dialog"]');
+}
+function syncStudentLiveUpdates() {
+  clearTimeout(studentLiveTimer);
+  if (!studentLiveActive()) { studentLiveRequest = null; return; }
+  if (!studentLiveRequest) studentLiveTimer = setTimeout(refreshStudentWorkspace, state.connError ? 10000 : 5000);
+}
+async function refreshStudentWorkspace() {
+  if (!studentLiveActive() || studentLiveRequest) return;
+  const request = {user:state.currentUser, view:state.view};
+  studentLiveRequest = request;
+  try {
+    const [exams, results] = await Promise.all([apiRequest("GET", "/api/exams?studentView=1"), apiRequest("GET", `/api/results?rollNo=${encodeURIComponent(request.user.rollNo)}`)]);
+    if (studentLiveRequest !== request || state.currentUser !== request.user || state.view !== request.view || !studentLiveActive()) return;
+    const changed = JSON.stringify(exams) !== JSON.stringify(state.exams) || JSON.stringify(results) !== JSON.stringify(state.myResults) || !!state.connError;
+    state.exams = exams; state.myResults = results; state.connError = "";
+    if (state.view === "studentResult" && state.lastResult && !results.some(result => result.id === state.lastResult.id)) {
+      state.studentReview = null; state.lastResult = null;
+      state.draftRecoveryMessage = "Your teacher returned your assessment. Open it to continue with your saved answers and a fresh time allowance.";
+      setView("studentHome");
+    } else if (changed && state.view === "studentHome") {
+      const position = window.scrollY; render(); window.scrollTo({top:position, behavior:"auto"});
+    }
+  } catch (error) {
+    if (studentLiveRequest === request && studentLiveActive()) {
+      if (handleStudentSessionFailure(error)) return;
+      state.studentLiveBlocked = !!error.status && error.status < 500;
+      state.connError = error.status ? (error.message || "The server could not refresh your workspace. Try again.") : "Could not reach the server. Reconnecting automatically; your displayed work is kept.";
+      if (state.view === "studentHome") render();
+    }
+  } finally {
+    if (studentLiveRequest === request) studentLiveRequest = null;
+    syncStudentLiveUpdates();
+  }
+}
+function handleStudentSessionFailure(error) {
+  if (error.status !== 401) return false;
+  saveCurrentAttempt();
+  if (state.runtime?.timerId) clearInterval(state.runtime.timerId);
+  state.runtime = null; state.submitting = false;
+  state.currentUser = null;
+  state.exams = []; state.myResults = [];
+  state.lastResult = null; state.studentReview = null;
+  state.connError = "";
+  state.studentLiveBlocked = true;
+  setView("studentLogin");
+  state.errorMsg = "Your student session has expired. Sign in to continue. Any saved answers remain on this device.";
+  render();
+  navigateToPortal("/login?expired=1");
+  return true;
+}
+document.addEventListener("visibilitychange", () => { if (!document.hidden && studentLiveActive()) refreshStudentWorkspace(); else syncStudentLiveUpdates(); });
+window.addEventListener("online", () => { if (studentLiveActive()) refreshStudentWorkspace(); });
+window.addEventListener("pagehide", () => { clearTimeout(studentLiveTimer); studentLiveRequest = null; });
+document.addEventListener("visibilitychange", handleVisibilityChange);
+window.addEventListener("blur", warnAssessmentFocus);
+window.addEventListener("focus", () => { if (state.runtime?.focusDeadlineAt) tickTimer(); });
+document.addEventListener("keydown", event => {
+  if (!state.runtime?.focusDeadlineAt || !document.querySelector('.assessment-warning')) return;
+  if (event.key === "Escape" || event.key === "Tab") { event.preventDefault(); document.querySelector('.assessment-warning button')?.focus(); }
+});
+window.addEventListener("pagehide", saveCurrentAttempt);
+window.addEventListener("beforeunload", saveCurrentAttempt);
+window.addEventListener("popstate", handleQuizBackNavigation);
+if (window.ARALHUB_CURRENT_USER?.role === "student") {
+  state.currentUser = window.ARALHUB_CURRENT_USER;
+  goStudentHome();
+} else render();
+
+state.currentUser = {"role": "student", "name": "Alex Santos", "department": "BSIT", "departments": ["BSIT"], "section": "A", "yearLevel": "1st Year", "rollNo": "PREVIEW-001"};
+state.exams = [{"id": "sample-1", "title": "Introduction to Programming", "subject": "Computer Programming 1", "activityType": "exam", "duration": 60, "questionCount": 40, "attempts": 24, "department": "BSIT", "departments": ["BSIT"], "yearLevel": "1st Year", "sectionScope": "ALL"}, {"id": "sample-2", "title": "The Fundamentals of Computing", "subject": "Computing Fundamentals", "activityType": "quiz", "duration": 20, "questionCount": 15, "attempts": 18, "department": "BSIT", "departments": ["BSIT"], "yearLevel": "1st Year", "sectionScope": "A"}, {"id": "sample-3", "title": "Understanding Digital Systems", "subject": "Computer Systems", "activityType": "exam", "duration": 45, "questionCount": 30, "attempts": 12, "department": "BSIT", "departments": ["BSIT"], "yearLevel": "1st Year", "sectionScope": "ALL"}];
+state.myResults=[{id:'r1',examId:'sample-3',score:26,total:30,percent:86.7}]; setView('studentHome');
+
+
+setTimeout(() => {
+  const check = document.createElement('meta'); check.id='uiLayoutCheck';
+  check.content=JSON.stringify({width:innerWidth,documentWidth:document.documentElement.scrollWidth,view:state.view,overflow:document.documentElement.scrollWidth>innerWidth+1});
+  document.head.append(check);
+}, 100);
+</script></body></html>

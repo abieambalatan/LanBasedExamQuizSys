@@ -1,0 +1,15 @@
+.venv/
+__pycache__/
+*.py[cod]
+.admin_password
+.django_secret_key
+.env
+.secrets/
+exam.db*
+backups/
+logs/
+uploads/
+
+# Generated reports and runtime logs
+reports/*.json
+reports/*.log

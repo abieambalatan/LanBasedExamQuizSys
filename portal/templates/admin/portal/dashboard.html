@@ -1,0 +1,21 @@
+{% extends "admin/base_site.html" %}
+{% load i18n static %}
+{% block bodyclass %}{{ block.super }} dashboard campus-dashboard{% endblock %}
+{% block coltype %}colMS{% endblock %}
+{% block content_title %}{% endblock %}
+{% block content %}
+<div id="content-main">
+  <section class="campus-hero"><div><span class="campus-eyebrow">SUPER ADMIN WORKSPACE</span><h1>Your campus.<br>One connected space.</h1><p>Manage your school, support your teachers, and keep every assessment moving.</p><a class="campus-button" href="{% url 'admin:portal_teacher_add' %}">+ Add teacher</a><a class="campus-button ghost" href="{% url 'admin:portal_schooloption_changelist' %}">School settings ↗</a></div><div class="campus-hero-art" aria-hidden="true"><span><img src="{% static 'admin/wallpapercdk.png' %}" alt=""></span><i>✓</i></div></section>
+  <div class="campus-section-heading"><div><span class="campus-eyebrow">SCHOOL OVERVIEW</span><h2>A clear view of your community</h2></div><span id="campusLiveStatus" class="campus-live" role="status">Live · updates every 5 seconds</span></div>
+  <div class="campus-stats">
+    <a href="{% url 'admin:portal_student_changelist' %}"><span class="campus-stat-icon">◎</span><span>Active students</span><strong data-campus-stat="students">{{ campus.students }}</strong><small>View student directory ↗</small></a>
+    <a href="{% url 'admin:portal_teacher_changelist' %}"><span class="campus-stat-icon mint">♧</span><span>Active teachers</span><strong data-campus-stat="teachers">{{ campus.teachers }}</strong><small>Manage your faculty ↗</small></a>
+    <a href="{% url 'admin:portal_exam_changelist' %}"><span class="campus-stat-icon peach">▤</span><span>Assessments</span><strong data-campus-stat="assessments">{{ campus.assessments }}</strong><small>Exams and quizzes ↗</small></a>
+  </div>
+  <div class="campus-section-heading"><div><span class="campus-eyebrow">ADMINISTRATION</span><h2>Manage your school</h2></div></div>
+  <p><a class="campus-button" href="{% url 'admin:portal_teacher_changelist' %}?status=archived">Retrieve deleted teachers</a> <a class="campus-button" href="{% url 'admin:portal_student_changelist' %}?student_status=archived">Retrieve deleted students</a></p>
+  {% include "admin/app_list.html" with app_list=app_list show_changelinks=True %}
+</div>
+<script src="{% static 'admin/aralhub-dashboard.js' %}" data-live-url="{% url 'admin:campus-live' %}" defer></script>
+{% endblock %}
+{% block sidebar %}{% endblock %}

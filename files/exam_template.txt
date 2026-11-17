@@ -1,0 +1,50 @@
+Part 1 - Multiple Choice
+
+Question: What is 2 + 2?
+A. 3
+B. 4
+C. 5
+D. 6
+Answer: B
+
+Question: Which device is used to type text?
+A. Monitor
+B. Speaker
+C. Keyboard
+D. Printer
+Answer: C
+
+Part 2 - Identification
+
+Question: What is the capital of the Philippines?
+Answer: Manila
+Alternatives: City of Manila
+
+Question: What does CPU stand for?
+Answer: Central Processing Unit
+
+Part 3 - True or False
+
+Question: The Earth revolves around the Sun.
+Answer: True
+
+Question: A keyboard is an output device.
+Answer: False
+
+Part 4 - Matching Type
+
+Choices:
+A. Displays images
+B. Processes instructions
+C. Produces printed copies
+D. Stores files
+E. Records sound
+
+Question: CPU
+Answer: B
+
+Question: Monitor
+Answer: A
+
+Question: Printer
+Answer: C

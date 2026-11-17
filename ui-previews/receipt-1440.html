@@ -1,0 +1,727 @@
+<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><base href="file:///C:/AralHubLanBasedSystem%20V2/files/"><link rel="stylesheet" href="css/style.css"></head><body><a class="skip-link" href="#mainContent">Skip to content</a><div id="app"></div><script>/* Shared frontend helpers used by both student and admin pages. */
+function esc(str) {
+   if (str === null || str === undefined) return "";
+   return String(str).replace(/[&<>"']/g, (ch) => ({
+      "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
+   }[ch]));
+}
+
+function fmtTime(totalSeconds) {
+   const s = Math.max(0, Math.floor(totalSeconds || 0));
+   const m = Math.floor(s / 60);
+   const sec = s % 60;
+   return `${String(m).padStart(2, "0")}:${String(sec).padStart(2, "0")}`;
+}
+
+function uiIcon(name, className = "") {
+   const paths = {
+      grid: '<rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/>',
+      book: '<path d="M12 6c-3-2-6-2-9-1v15c3-1 6-1 9 1 3-2 6-2 9-1V5c-3-1-6-1-9 1Z"/><path d="M12 6v15"/>',
+      people: '<circle cx="9" cy="8" r="3"/><path d="M3 21v-3a6 6 0 0 1 12 0v3M16 5a3 3 0 0 1 0 6M21 21v-3a6 6 0 0 0-4-5"/>',
+      plus: '<path d="M12 5v14M5 12h14"/>',
+      arrow: '<path d="M5 12h14m-6-6 6 6-6 6"/>',
+      check: '<path d="m6 12 4 4 8-8"/><circle cx="12" cy="12" r="10"/>',
+      clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
+      file: '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"/><path d="M14 2v6h6M8 13h8M8 17h5"/>',
+      search: '<circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 5 5"/>',
+      logout: '<path d="M9 4H5a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h4M10 12h11m-4-4 4 4-4 4"/>',
+      spark: '<path d="m12 3 2.5 6.5L21 12l-6.5 2.5L12 21l-2.5-6.5L3 12l6.5-2.5ZM20 2v4m-2-2h4"/>',
+      shield: '<path d="m12 3 8 3v6c0 5-8 9-8 9s-8-4-8-9V6Z"/><path d="m8 12 3 3 5-5"/>',
+   };
+   return `<svg class="ui-icon ${className}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths[name] || paths.book}</svg>`;
+}
+
+function userInitials(name) {
+   return String(name || "A").trim().split(/\s+/).slice(0, 2).map(word => word[0]).join("").toUpperCase();
+}
+
+function answeredQuestionCount(runtime) {
+   return runtime.exam.questions.filter(question => {
+      const value = runtime.answers[question.id];
+      return value !== undefined && value !== null && String(value).trim() !== "";
+   }).length;
+}
+
+async function openWorkspaceSection(section) {
+   const student = state.currentUser?.role === "student" || !state.currentUser?.role;
+   state.workspaceSection = section;
+   if (student && state.view !== "studentHome") await goStudentHome();
+   else if (!student && state.view !== "adminHome") await goAdminHome();
+   else render();
+   const target = document.getElementById(section);
+   if (section === "students") target?.querySelector("details")?.setAttribute("open", "");
+   target?.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+function renderWorkspace(body, role) {
+   const student = role === "student";
+   const focus = state.view === "takeExam";
+   const roleName = student ? "Student" : role === "admin" ? "Administrator" : "Teacher";
+   const section = state.workspaceSection || "overview";
+   const title = ({ studentHome: "Overview", adminHome: "Overview", createExam: "Activity builder", adminResults: "Activity results", adminResultReview: "Answer review", studentResult: "Submission receipt", takeExam: "Assessment in progress" })[state.view] || "Workspace";
+   const home = student ? "studentHome" : "adminHome";
+   const links = [
+      { id: "overview", label: "Overview", icon: "grid" },
+      ...(role === "admin" ? [{ id: "teachers", label: "Teachers", icon: "book" }] : [{ id: "activities", label: "My assessments", icon: "book" }]),
+      ...(!student ? [{ id: "students", label: "Students", icon: "people" }] : []),
+   ];
+   const progress = focus && state.runtime ? `${answeredQuestionCount(state.runtime)} of ${state.runtime.exam.questions.length} answered` : "";
+   return `<div class="workspace ${focus ? "workspace-focus" : ""}">
+      <aside class="sidebar" aria-label="Workspace navigation">
+         <div class="sidebar-brand"><img src="images/aralhub-logo.png" alt="Colegio de Kidapawan seal"><div><strong>AbieksExamSys</strong><small>LEARNING, CONNECTED</small></div></div>
+         <div class="sidebar-label">${roleName} workspace</div>
+         ${focus ? `<div class="focus-note">${uiIcon("shield")}<strong>Assessment in progress</strong><p>Use the question numbers to review your answers.</p><span class="badge open" data-answer-count>${progress}</span></div>` : `<nav class="sidebar-nav">${links.map(link => `<button class="nav-item ${state.view === home && section === link.id ? "active" : ""}" ${state.view === home && section === link.id ? 'aria-current="page"' : ""} onclick="openWorkspaceSection('${link.id}')">${uiIcon(link.icon)}<span>${link.label}</span></button>`).join("")}${role === "teacher" ? `<button class="nav-item ${state.view === "createExam" ? "active" : ""}" onclick="startCreateExam()">${uiIcon("plus")}<span>Create activity</span></button>` : ""}</nav>`}
+         <div class="sidebar-bottom"><div class="sidebar-note">${uiIcon("shield")}<strong>${student ? "Ready for your next assessment?" : "Your classroom, in one place."}</strong><span>${student ? "Find your assigned exams and quizzes in My assessments." : "Manage assessments, student accounts, and results from your workspace."}</span></div>${!focus ? `<button class="nav-item signout" onclick="logout()">${uiIcon("logout")}<span>Sign out</span></button>` : ""}</div>
+      </aside>
+      <div class="workspace-main"><header class="workspace-header"><div class="breadcrumb">${roleName} workspace <span>/</span><strong>${title}</strong></div><div class="profile"><div><strong>${esc(state.currentUser.name || roleName)}</strong><small>${roleName}${student && state.currentUser.department ? ` · ${esc(state.currentUser.department)}` : ""}</small></div><span class="avatar">${esc(userInitials(state.currentUser.name))}</span></div></header><main id="mainContent" class="workspace-content">${body}</main><footer class="workspace-footer"><span>AbieksExamSys · Colegio de Kidapawan</span><span>A better space to learn.</span></footer></div>
+   </div>`;
+}
+
+function renderActivityTools() {
+   const type = state.activityFilter || "all";
+   return `<div class="activity-toolbar" data-filter="${esc(type)}"><label class="activity-search">${uiIcon("search")}<span class="sr-only">Search assessments</span><input id="activitySearch" type="search" value="${esc(state.activityQuery || "")}" placeholder="Search title or subject" oninput="filterActivityCards()"></label><div class="activity-tabs" role="group" aria-label="Activity type">${[["all", "All activities"], ["exam", "Exams"], ["quiz", "Quizzes"]].map(([value, label]) => `<button class="${type === value ? "active" : ""}" aria-pressed="${type === value}" onclick="setActivityFilter('${value}', this)">${label}</button>`).join("")}</div></div><p id="activitySearchCount" class="search-count" role="status"></p>`;
+}
+
+function renderAuthLayout(body, teacher = false) {
+   return `<div class="auth-layout"><aside class="auth-story"><a class="story-brand" href="index.html"><img src="images/aralhub-logo.png" alt="Colegio de Kidapawan seal"><span>AbieksExamSys</span></a><div class="auth-story-copy"><span class="story-eyebrow">${teacher ? "FOR THE PEOPLE WHO INSPIRE" : "YOUR SPACE TO GROW"}</span><h1>${teacher ? "Great teaching.<br> Greater possibilities." : "A little focus.<br> A brighter future."}</h1><p>${teacher ? "Create thoughtful assessments, bring your classroom together, and see every student's progress." : "A calm, connected place for your assessments. Show what you know, one question at a time."}</p><div class="story-features"><span>${uiIcon("book")} Every subject, together</span><span>${uiIcon("check")} Progress you can see</span><span>${uiIcon("shield")} Your own learning space</span></div></div><span class="story-footer">COLEGIO DE KIDAPAWAN · AbieksExamSys</span><div class="story-orbit" aria-hidden="true"></div></aside><main class="auth-form-area" id="mainContent">${body}</main></div>`;
+}
+
+function setActivityFilter(type, button) {
+   state.activityFilter = type;
+   document.querySelectorAll(".activity-tabs button").forEach(item => { item.classList.toggle("active", item === button); item.setAttribute("aria-pressed", item === button ? "true" : "false"); });
+   document.querySelector(".activity-toolbar").dataset.filter = type;
+   filterActivityCards();
+}
+
+function filterActivityCards() {
+   const query = (document.getElementById("activitySearch")?.value || "").trim().toLowerCase();
+   state.activityQuery = document.getElementById("activitySearch")?.value || "";
+   const type = document.querySelector(".activity-toolbar")?.dataset.filter || "all";
+   let visible = 0;
+   document.querySelectorAll(".exam-row[data-activity]").forEach(card => {
+      card.hidden = !(card.dataset.search.includes(query) && (type === "all" || card.dataset.activity === type));
+      if (!card.hidden) visible++;
+   });
+   const empty = document.getElementById("activityNoMatches");
+   if (empty) empty.hidden = visible > 0;
+   const count = document.getElementById("activitySearchCount");
+   if (count) count.textContent = `${visible} ${visible === 1 ? "assessment" : "assessments"} shown`;
+}
+
+// Preserve entries when validation redraws the same authentication screen.
+// Passwords remain only in the current page's memory, never in browser storage.
+function captureInterfaceState() {
+   const app = document.getElementById("app");
+   return {
+      view: app.dataset.view,
+      focusId: document.activeElement?.id,
+      fields: Array.from(app.querySelectorAll(".auth-form-area input[id], .auth-form-area select[id]"), field => ({
+         id: field.id, value: field.value,
+         selected: field.multiple ? Array.from(field.selectedOptions, option => option.value) : null,
+      })),
+   };
+}
+
+function refreshMultiSelect(select) {
+   select.parentElement.querySelector(`[data-select-id="${select.id}"]`)?.remove();
+   const label = select.closest(".field")?.querySelector("label");
+   if (label && !label.id) label.id = `${select.id}-label`;
+   const group = document.createElement("div");
+   group.className = "choice-list";
+   group.dataset.selectId = select.id;
+   group.setAttribute("role", "group");
+   if (label) group.setAttribute("aria-labelledby", label.id);
+   const options = Array.from(select.options).filter(option => option.value);
+   if (!options.length) {
+      const message = document.createElement("p");
+      message.className = "help-text";
+      message.textContent = select.options[0]?.textContent || "No options available.";
+      group.append(message);
+   }
+   for (const option of options) {
+      const item = document.createElement("label");
+      item.className = "choice-item";
+      const checkbox = document.createElement("input");
+      checkbox.type = "checkbox";
+      checkbox.checked = option.selected;
+      checkbox.disabled = select.disabled || option.disabled;
+      checkbox.addEventListener("change", () => {
+         option.selected = checkbox.checked;
+         select.dispatchEvent(new Event("change", { bubbles: true }));
+      });
+      const text = document.createElement("span");
+      text.textContent = option.textContent;
+      item.append(checkbox, text);
+      group.append(item);
+   }
+   select.hidden = true;
+   select.after(group);
+}
+
+function enhanceInterface(previous) {
+   const app = document.getElementById("app");
+   if (previous?.view === state.view) {
+      for (const saved of previous.fields) {
+         const field = document.getElementById(saved.id);
+         if (!field) continue;
+         if (saved.selected) Array.from(field.options).forEach(option => { option.selected = saved.selected.includes(option.value); });
+         else field.value = saved.value;
+      }
+   }
+   app.dataset.view = state.view;
+   app.querySelectorAll(".field").forEach((field, index) => {
+      const control = field.querySelector("input, select, textarea");
+      const label = field.querySelector("label");
+      if (control && label && !label.contains(control)) {
+         if (!control.id) control.id = `field-${index}`;
+         label.htmlFor = control.id;
+         const hint = field.querySelector(".help-text");
+         if (hint) { hint.id = `${control.id}-hint`; control.setAttribute("aria-describedby", hint.id); }
+      }
+   });
+   app.querySelectorAll('input[type="password"]').forEach(input => {
+      const wrapper = document.createElement("div");
+      wrapper.className = "password-field";
+      input.before(wrapper);
+      wrapper.append(input);
+      const toggle = document.createElement("button");
+      toggle.type = "button";
+      toggle.className = "password-toggle";
+      toggle.textContent = "Show";
+      toggle.setAttribute("aria-controls", input.id);
+      toggle.setAttribute("aria-pressed", "false");
+      toggle.setAttribute("aria-label", `Show ${input.closest(".field")?.querySelector("label")?.textContent.toLowerCase() || "password"}`);
+      toggle.addEventListener("click", () => {
+         const show = input.type === "password";
+         input.type = show ? "text" : "password";
+         toggle.textContent = show ? "Hide" : "Show";
+         toggle.setAttribute("aria-pressed", String(show));
+         toggle.setAttribute("aria-label", `${show ? "Hide" : "Show"} ${input.closest(".field")?.querySelector("label")?.textContent.toLowerCase() || "password"}`);
+      });
+      wrapper.append(toggle);
+   });
+   app.querySelectorAll("select[multiple]").forEach(refreshMultiSelect);
+   app.querySelectorAll(".opt-row").forEach(row => {
+      const letter = row.querySelector(".opt-label")?.textContent || "";
+      row.querySelector('input[type="text"]')?.setAttribute("aria-label", `Option ${letter}`);
+      row.querySelector('input[type="radio"]')?.setAttribute("aria-label", `Mark option ${letter} as correct`);
+   });
+   app.querySelectorAll(".banner, .conn-banner").forEach(banner => {
+      banner.setAttribute("role", banner.classList.contains("success") ? "status" : "alert");
+   });
+   app.querySelectorAll("th").forEach(header => { header.scope = "col"; });
+   app.querySelectorAll(".teacher-table-wrap, .table-scroll").forEach(wrapper => {
+      wrapper.tabIndex = 0;
+      wrapper.setAttribute("role", "region");
+      wrapper.setAttribute("aria-label", "Directory table. Scroll horizontally to see all columns.");
+   });
+   if (document.getElementById("activitySearch")) filterActivityCards();
+   const modal = app.querySelector('[role="dialog"]');
+   document.body.classList.toggle("modal-open", !!modal);
+   if (modal) modal.querySelector("button")?.focus();
+   else if (state.errorMsg) {
+      const alert = app.querySelector('[role="alert"]');
+      if (alert) { alert.tabIndex = -1; alert.focus(); }
+   } else if (previous?.view === state.view && previous.focusId) document.getElementById(previous.focusId)?.focus({ preventScroll: true });
+}
+
+function renderDirectoryTools(id, placeholder) {
+   return `<div class="table-tools"><label class="activity-search">${uiIcon("search")}<span class="sr-only">${esc(placeholder)}</span><input type="search" placeholder="${esc(placeholder)}" oninput="filterDirectory(this, '${id}')"></label><p id="${id}-status" class="search-count" role="status"></p><p class="table-scroll-hint">Scroll sideways to see all columns.</p></div>`;
+}
+
+function filterDirectory(input, directoryId) {
+   const directory = document.getElementById(directoryId);
+   if (!directory) return;
+   const query = input.value.trim().toLowerCase();
+   let count = 0;
+   directory.querySelectorAll("tbody tr").forEach(row => {
+      row.hidden = !row.textContent.toLowerCase().includes(query);
+      if (!row.hidden) count++;
+   });
+   const status = document.getElementById(`${directoryId}-status`);
+   if (status) status.textContent = count ? `${count} ${count === 1 ? "record" : "records"} shown` : "No matching records. Try another name or ID.";
+}
+
+async function submitAuthForm(form, action) {
+   if (form.getAttribute("aria-busy") === "true") return;
+   form.setAttribute("aria-busy", "true");
+   const button = form.querySelector('button[type="submit"]');
+   const label = button.textContent;
+   button.disabled = true;
+   button.textContent = "Please wait...";
+   try { await action(); }
+   finally {
+      form.removeAttribute("aria-busy");
+      button.disabled = false;
+      button.textContent = label;
+   }
+}
+
+document.addEventListener("keydown", event => {
+   const modal = document.querySelector('[role="dialog"]');
+   if (!modal) return;
+   if (event.key === "Escape") { event.preventDefault(); closeModal(); }
+   if (event.key === "Tab") {
+      const buttons = Array.from(modal.querySelectorAll("button:not(:disabled)"));
+      const first = buttons[0], last = buttons[buttons.length - 1];
+      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
+      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
+   }
+});
+
+let _csrfToken = null;
+let _csrfLoading = null;
+
+async function getCsrfToken() {
+   if (_csrfToken) return _csrfToken;
+   if (!_csrfLoading) {
+      _csrfLoading = (async () => {
+         try {
+            const response = await fetch("/api/csrf", { credentials: "same-origin", cache: "no-store" });
+            const data = await response.json();
+            if (!response.ok || typeof data.csrfToken !== "string") throw new Error("Could not initialize a secure request. Refresh the page and try again.");
+            _csrfToken = data.csrfToken;
+            return _csrfToken;
+         } catch (error) {
+            if (error instanceof TypeError) throw new Error("Could not reach the server. Check your connection and try again.");
+            throw error;
+         } finally { _csrfLoading = null; }
+      })();
+   }
+   return _csrfLoading;
+}
+
+async function apiRequest(method, path, body, extraHeaders) {
+   const headers = Object.assign({ "Content-Type": "application/json" }, extraHeaders || {});
+   if (!["GET", "HEAD", "OPTIONS"].includes(method)) headers["X-CSRFToken"] = await getCsrfToken();
+   const opts = { method, headers, credentials: "same-origin" };
+   if (body !== undefined) opts.body = JSON.stringify(body);
+
+   // Only keyed submissions are safe to resend after a lost response.
+   const attempts = method === "POST" && path === "/api/results" && body?.submissionId ? 4 : 1;
+   for (let attempt = 0; attempt < attempts; attempt++) {
+      try {
+         const res = await fetch(path, opts);
+         let data = null;
+         try { data = await res.json(); } catch (e) { data = null; }
+         if (res.ok && data !== null) {
+            if (path.endsWith("/login") || path === "/api/logout") _csrfToken = null;
+            return data;
+         }
+         if (res.status === 403) _csrfToken = null;
+         const error = new Error((data && data.error) || `Request failed (${res.status}).`);
+         error.retryable = [502, 503, 504].includes(res.status) || (res.ok && data === null);
+         throw error;
+      } catch (err) {
+         const retryable = err instanceof TypeError || err.retryable;
+         if (!retryable || attempt === attempts - 1) {
+            if (err instanceof TypeError) throw new Error("Could not reach the server. Check your connection and try again.");
+            throw err;
+         }
+         await new Promise(resolve => setTimeout(resolve, 1000 * (2 ** attempt) + Math.random() * 500));
+      }
+   }
+}
+
+let _modal = null;
+
+function showModal(opts) {
+   _modal = {
+      title: opts.title || "",
+      message: opts.message || "",
+      confirmLabel: opts.confirmLabel || "OK",
+      cancelLabel: opts.cancelLabel || null,
+      onConfirm: typeof opts.onConfirm === "function" ? opts.onConfirm : null,
+   };
+   if (typeof render === "function") render();
+}
+
+function closeModal() {
+   _modal = null;
+   if (typeof render === "function") render();
+}
+
+function _modalConfirm() {
+   const cb = _modal && _modal.onConfirm;
+   _modal = null;
+   if (cb) cb();
+   else if (typeof render === "function") render();
+}
+
+function renderModalHtml() {
+   if (!_modal) return "";
+   return `
+   <div class="modal-backdrop" onclick="if(event.target===this) closeModal()">
+      <div class="modal-box" role="dialog" aria-modal="true" ${_modal.title ? 'aria-labelledby="dialogTitle"' : 'aria-label="Notification"'}>
+         ${_modal.title ? `<h3 id="dialogTitle">${esc(_modal.title)}</h3>` : ""}
+         ${_modal.message ? `<p>${esc(_modal.message)}</p>` : ""}
+         <div class="modal-actions">
+            ${_modal.cancelLabel ? `<button class="btn secondary" onclick="closeModal()">${esc(_modal.cancelLabel)}</button>` : ""}
+            <button class="btn" onclick="_modalConfirm()">${esc(_modal.confirmLabel)}</button>
+         </div>
+      </div>
+   </div>`;
+}
+
+
+
+/* ============================= STATE ============================= */
+let state = {
+  view: "landing",           // landing | studentSignup | studentLogin | studentHome | takeExam | studentResult
+  currentUser: null,         // {name, rollNo, department, section, yearLevel}
+  exams: [],
+  myResults: [],
+  runtime: null,
+  lastResult: null,
+  errorMsg: "",
+  successMsg: "",
+  connError: "",
+  submitting: false,
+};
+
+const DEPARTMENTS = ["BSIT", "BSCRIM", "BEED", "BSHM", "BSN"];
+const YEAR_LEVELS = ["1st Year", "2nd Year", "3rd Year", "4th Year"];
+const SECTIONS = ["A", "B", "C", "D", "E", "F"];
+
+function setView(v, extra) { state.errorMsg = ""; state.successMsg = ""; state.view = v; if (extra) Object.assign(state, extra); render(); }
+
+/* ============================= TOPBAR ============================= */
+async function logout() {
+  if (state.runtime && state.runtime.timerId) clearInterval(state.runtime.timerId);
+  try { await apiRequest("POST", "/api/logout"); } catch (err) {}
+  state.runtime = null; state.currentUser = null;
+  setView("landing");
+}
+
+/* ============================= LANDING ============================= */
+function renderLanding() {
+  return `<div class="landing-page-shell">
+    <nav class="landing-nav" aria-label="Main navigation"><a class="landing-logo" href="index.html"><img src="images/aralhub-logo.png" alt="Colegio de Kidapawan seal"><strong>AbieksExamSys</strong></a></nav>
+    <main id="mainContent" class="landing-main"><div class="landing-copy"><span class="landing-eyebrow"><span></span> A BETTER SPACE TO LEARN</span><h1>Your classroom.<br><em>One clear workspace.</em></h1><p class="lead">Find your assigned exams and quizzes, complete your assessments, and keep track of your scores.</p><div class="landing-cta"><button class="btn" onclick="setView('studentLogin')">Student sign in ${uiIcon("arrow")}</button><button class="btn secondary" onclick="setView('studentSignup')">Create an account</button></div><div class="landing-proof"><span class="proof-icon">${uiIcon("shield")}</span><div><strong>Built around your classroom.</strong><span>A focused experience, from the first question to your final result.</span></div></div></div>
+    <div class="learning-visual" aria-label="AbieksExamSys assessment features"><div class="visual-orbit orbit-one"></div><div class="visual-orbit orbit-two"></div><div class="visual-note">${uiIcon("spark")} A little focus goes a long way.</div><div class="visual-card"><div class="visual-card-top"><span class="visual-book">${uiIcon("book")}</span><span class="badge open">YOUR LEARNING SPACE</span></div><h2>Ready when<br>you are.</h2><p>One workspace. Every possibility.</p><div class="visual-feature">${uiIcon("check")} Exams & quizzes <span>01</span></div><div class="visual-feature">${uiIcon("check")} Four ways to show what you know <span>02</span></div><div class="visual-feature">${uiIcon("check")} Submissions & progress <span>03</span></div></div><div class="visual-float">${uiIcon("check")}<div><strong>Small steps. Real progress.</strong><span>Your next achievement is ahead.</span></div></div></div></main>
+    <footer class="landing-footer"><span>AbieksExamSys &middot; Colegio de Kidapawan</span><div><span>Learn with focus.</span><span>Grow with confidence.</span></div></footer></div>`;
+}
+
+/* ============================= STUDENT SIGN UP ============================= */
+function renderStudentSignup() {
+  const options = DEPARTMENTS.map(d => `<option value="${d}">${d}</option>`).join("");
+  return `
+  <div class="wrap auth-wrap"><div class="wrap-inner auth-inner">
+
+    <form class="sheet auth-card" onsubmit="event.preventDefault(); submitAuthForm(this, doStudentSignup)">
+      <div class="auth-brand"><img src="images/aralhub-logo.png" alt=""><span>AbieksExamSys</span></div>
+      <div class="auth-heading"><span class="eyebrow">Student registration</span><h2>Create your account</h2><div class="meta">Enter your name, program, year level, and section to find your class assessments.</div></div>
+      ${state.errorMsg ? `<div class="banner">${esc(state.errorMsg)}</div>` : ""}
+      <div class="field"><label for="up_first_name">First name</label><input id="up_first_name" type="text" placeholder="e.g. Juan" autocomplete="given-name" maxlength="255" /></div>
+      <div class="field"><label for="up_last_name">Last name</label><input id="up_last_name" type="text" placeholder="e.g. Dela Cruz" autocomplete="family-name" maxlength="255" /></div>
+      <div class="field"><label for="up_middle_initial">Middle initial <span class="help-text">(optional)</span></label><input id="up_middle_initial" type="text" placeholder="e.g. P" maxlength="2" /><small class="help-text">Enter one letter, or leave blank if you have no middle initial.</small></div>
+      <div class="field"><label>ID Number</label><input id="up_roll" type="text" placeholder="e.g. 21CS045" /></div>
+      <div class="field"><label>Program / Department</label>
+        <select id="up_dept">
+          <option value="">Select program / department</option>
+          ${options}
+        </select>
+      </div>
+      <div class="field"><label>Year level</label>
+        <select id="up_year">
+          <option value="">Select year level</option>
+          ${YEAR_LEVELS.map(year => `<option value="${year}">${year}</option>`).join("")}
+        </select>
+      </div>
+      <div class="field"><label>Section</label>
+        <select id="up_section">
+          <option value="">Select section</option>
+          ${SECTIONS.map(section => `<option value="${section}">${section}</option>`).join("")}
+        </select>
+      </div>
+      <div class="field"><label>Password</label><input id="up_password" type="password" placeholder="At least 4 characters" autocomplete="new-password" /></div>
+      <div class="field"><label>Confirm password</label><input id="up_password2" type="password" placeholder="Re-enter your password" autocomplete="new-password" /></div>
+      <button type="submit" class="btn block auth-submit">Create student account</button>
+    </form>
+    <button class="back-link" onclick="setView('studentLogin')">Already have an account? Sign in</button>
+    <button class="back-link" onclick="setView('landing')">&larr; Back</button>
+  </div></div>`;
+}
+async function doStudentSignup() {
+  const firstName = document.getElementById("up_first_name").value.trim();
+  const lastName = document.getElementById("up_last_name").value.trim();
+  const middleInitial = document.getElementById("up_middle_initial").value.trim();
+  const roll = document.getElementById("up_roll").value.trim();
+  const department = document.getElementById("up_dept").value;
+  const section = document.getElementById("up_section").value;
+  const yearLevel = document.getElementById("up_year").value;
+  const password = document.getElementById("up_password").value;
+  const password2 = document.getElementById("up_password2").value;
+  if (!firstName || !lastName || !roll) { state.errorMsg = "Please enter your first name, last name, and ID number."; render(); return; }
+  if (middleInitial && !/^\p{L}\.?$/u.test(middleInitial)) {
+    state.errorMsg = "Middle initial must be one letter, optionally followed by a period.";
+    render(); return;
+  }
+  if (!DEPARTMENTS.includes(department)) { state.errorMsg = "Please select your department."; render(); return; }
+  if (!SECTIONS.includes(section)) { state.errorMsg = "Please select your section."; render(); return; }
+  if (!YEAR_LEVELS.includes(yearLevel)) { state.errorMsg = "Please select your year level."; render(); return; }
+  if (password.length < 4) { state.errorMsg = "Password must be at least 4 characters."; render(); return; }
+  if (password !== password2) { state.errorMsg = "Passwords do not match."; render(); return; }
+  try {
+    await apiRequest("POST", "/api/students/signup", { firstName, lastName, middleInitial, rollNo: roll, department, section, yearLevel, password });
+    setView("studentLogin", { successMsg: "Account created! Please sign in." });
+  } catch (err) {
+    state.errorMsg = err.message || "Could not sign up. Please try again.";
+    render();
+  }
+}
+
+/* ============================= STUDENT SIGN IN ============================= */
+function renderStudentLogin() {
+  return `
+  <div class="wrap auth-wrap"><div class="wrap-inner auth-inner auth-login-inner">
+  
+    <form class="sheet auth-card login-card" onsubmit="event.preventDefault(); submitAuthForm(this, doStudentLogin)">
+      <div class="auth-brand"><img src="images/aralhub-logo.png" alt=""><span>AbieksExamSys</span></div>
+      <div class="auth-heading"><span class="eyebrow">Student sign in</span><h2>Welcome back</h2><div class="meta">Use your student ID and password to open your assessments.</div></div>
+      ${state.successMsg ? `<div class="banner success">${esc(state.successMsg)}</div>` : ""}
+      ${state.errorMsg ? `<div class="banner">${esc(state.errorMsg)}</div>` : ""}
+      <div class="field"><label>ID Number</label><input id="li_username" type="text" placeholder="Your ID number" autocomplete="username" /></div>
+      <div class="field"><label>Password</label><input id="li_password" type="password" placeholder="Your password" autocomplete="current-password" /></div>
+      <button type="submit" class="btn block auth-submit">Sign in</button>
+      <details class="forgot-password-help"><summary>Forgot password?</summary><p>Contact a teacher in your program or the school administrator and provide your student ID. After they verify your identity, they can reset your password from the teacher/admin dashboard.</p></details>
+    </form>
+    <button class="back-link" onclick="setView('studentSignup')">Don't have an account yet? Sign up</button>
+    <button class="back-link" onclick="setView('landing')">&larr; Back</button>
+  </div></div>`;
+}
+async function doStudentLogin() {
+  const idNumber = document.getElementById("li_username").value.trim();
+  const password = document.getElementById("li_password").value;
+  if (!idNumber || !password) { state.errorMsg = "Please enter your ID number and password."; render(); return; }
+  try {
+    const student = await apiRequest("POST", "/api/students/login", { idNumber, password });
+    state.currentUser = { name: student.name, rollNo: student.rollNo, department: student.department, section: student.section || "", yearLevel: student.yearLevel || "" };
+    await goStudentHome();
+  } catch (err) {
+    state.errorMsg = err.message || "Incorrect username or password.";
+    render();
+  }
+}
+
+/* ============================= STUDENT HOME ============================= */
+async function goStudentHome() {
+  state.connError = "";
+  try {
+    state.exams = await apiRequest("GET", "/api/exams?studentView=1");
+    state.myResults = await apiRequest("GET", `/api/results?rollNo=${encodeURIComponent(state.currentUser.rollNo)}`);
+  } catch (err) { state.connError = "Unable to load your workspace. Check your connection, then try again."; }
+  setView("studentHome");
+}
+function renderStudentHome() {
+  const completedIds = new Set(state.myResults.map(result => result.examId));
+  const completed = state.exams.filter(exam => completedIds.has(exam.id)).length;
+  const available = state.exams.length - completed;
+  const rows = state.exams.map(ex => {
+    const isQuiz = ex.activityType === "quiz";
+    const attempts = state.myResults.filter(result => result.examId === ex.id).sort((a, b) => (b.percent || 0) - (a.percent || 0));
+    const result = attempts[0];
+    return `<article class="exam-row" data-activity="${isQuiz ? "quiz" : "exam"}" data-search="${esc((ex.title + ' ' + (ex.subject || '')).toLowerCase())}"><div class="activity-card-top"><span class="activity-icon ${isQuiz ? "mint" : "violet"}">${uiIcon(isQuiz ? "spark" : "file")}</span><span class="badge ${result ? "done" : "open"}">${result ? "Submitted" : isQuiz ? "Quiz" : "Exam"}</span></div><div class="info"><span class="activity-subject">${esc(ex.subject || "Class assessment")}</span><strong>${esc(ex.title)}</strong><span>${esc(ex.yearLevel || "All years")} &middot; ${ex.sectionScope === "ALL" ? "All sections" : `Section ${esc(ex.sectionScope || "")}`}</span></div><div class="activity-meta"><span>${uiIcon("file")} ${ex.questionCount} items</span><span>${uiIcon("clock")} ${ex.duration} min</span></div><div class="activity-card-footer">${result ? `<span class="score-label">${result.score}<small> / ${result.total}</small></span><span class="badge done">${uiIcon("check")} Recorded</span>` : `<span class="ready-label"><i></i> Ready to start</span><button class="btn" onclick="beginExam('${ex.id}')">Start ${isQuiz ? "quiz" : "exam"} ${uiIcon("arrow")}</button>`}</div>${result && isQuiz ? '<div class="card-note">Ask your teacher to return this quiz for another attempt.</div>' : ""}</article>`;
+  }).join("");
+  return `<div class="wrap"><div class="wrap-inner wide"><section id="overview" class="dashboard-hero student-hero"><div><span class="eyebrow">YOUR LEARNING SPACE</span><h1>Your learning dashboard</h1><p>Welcome back, ${esc(state.currentUser.name)}. ${available ? `${available} ${available === 1 ? "assessment is" : "assessments are"} ready to start.` : "You are up to date with your assigned assessments."}</p><span class="hero-chip">${uiIcon("book")} ${esc(state.currentUser.department || "Student")} ${state.currentUser.section ? `&middot; Section ${esc(state.currentUser.section)}` : ""}${state.currentUser.yearLevel ? ` &middot; ${esc(state.currentUser.yearLevel)}` : ""}</span></div><div class="hero-art" aria-hidden="true"><div class="hero-art-ring"></div><div class="hero-art-tile">${uiIcon("book")}</div><span class="hero-art-spark">${uiIcon("spark")}</span><span class="hero-art-check">${uiIcon("check")}</span></div></section>
+  ${state.connError ? `<div class="conn-banner"><span>${esc(state.connError)}</span><button class="btn secondary" onclick="goStudentHome()">Try again</button></div>` : ""}
+  <div class="stat-row"><div class="stat"><span class="stat-icon violet">${uiIcon("book")}</span><div><span class="label">Assigned</span><strong class="value">${state.exams.length}</strong><small>Across your subjects</small></div></div><div class="stat"><span class="stat-icon amber">${uiIcon("clock")}</span><div><span class="label">To do</span><strong class="value">${available}</strong><small>Your next opportunities</small></div></div><div class="stat"><span class="stat-icon mint">${uiIcon("check")}</span><div><span class="label">Submitted</span><strong class="value">${completed}</strong><small>Progress worth celebrating</small></div></div></div>
+  <section id="activities"><div class="section-title-row"><div><span class="eyebrow">EXAMS &amp; QUIZZES</span><h2>Your assessments</h2></div><span class="count-label">${state.exams.length} activities</span></div>${state.exams.length ? `${renderActivityTools()}<div class="exam-list">${rows}</div><div id="activityNoMatches" class="empty" hidden>No activities match your search. Try another title or subject.</div>` : `<div class="empty">${uiIcon("book")}<h3>A little space for what's next.</h3><p>Your teacher's assigned exams and quizzes will appear here.</p></div>`}</section></div></div>`;
+}
+
+/* ============================= TAKE EXAM ============================= */
+async function beginExam(examId) {
+  const activity = state.exams.find(exam => exam.id === examId);
+  if (state.myResults.some(result => result.examId === examId)) {
+    showModal({
+      title: activity?.activityType === "quiz" ? "Awaiting teacher return" : "Already attempted",
+      message: activity?.activityType === "quiz"
+        ? "Your quiz has been submitted. You can take it again after your teacher returns it."
+        : "You have already attempted this exam."
+    });
+    return;
+  }
+  let exam;
+  try { exam = await apiRequest("GET", `/api/exams/${examId}/take`); }
+  catch (err) { showModal({ title: "Could not start exam", message: err.message }); return; }
+  state.runtime = { exam, answers: {}, secondsLeft: exam.duration * 60, currentIdx: 0, timerId: null, tabSwitchSubmitted: false };
+  if (exam.activityType === "quiz") history.pushState({ aralHubQuiz: exam.id }, "", window.location.href);
+  setView("takeExam");
+  state.runtime.timerId = setInterval(tickTimer, 1000);
+}
+function tickTimer() {
+  if (!state.runtime) return;
+  state.runtime.secondsLeft -= 1;
+  if (state.runtime.secondsLeft <= 0) {
+    state.runtime.secondsLeft = 0;
+    clearInterval(state.runtime.timerId);
+    submitExam(true);
+    return;
+  }
+  updateTimerDom();
+}
+function updateTimerDom() {
+  const el = document.getElementById("timerDisplay");
+  if (!el || !state.runtime) return;
+  el.textContent = fmtTime(state.runtime.secondsLeft);
+  el.classList.toggle("low", state.runtime.secondsLeft <= 60);
+}
+function handleVisibilityChange() {
+  const runtime = state.runtime;
+  if (!document.hidden || !runtime || runtime.exam.activityType !== "quiz" || state.submitting || runtime.tabSwitchSubmitted) return;
+  runtime.tabSwitchSubmitted = true;
+  if (runtime.timerId) clearInterval(runtime.timerId);
+  submitExam(true, "tab_switch");
+}
+function handleQuizBackNavigation() {
+  const runtime = state.runtime;
+  if (!runtime || runtime.exam.activityType !== "quiz") return;
+  history.pushState({ aralHubQuiz: runtime.exam.id }, "", window.location.href);
+  showModal({
+    title: "Quiz in progress",
+    message: "Browser Back is disabled while your quiz is active. Submit the quiz when you are finished."
+  });
+}
+function renderTakeExam() {
+  const rt = state.runtime;
+  const exam = rt.exam;
+  const q = exam.questions[rt.currentIdx];
+  const total = exam.questions.length;
+  const answeredCount = answeredQuestionCount(rt);
+  const isQuiz = exam.activityType === "quiz";
+  const navBtns = exam.questions.map((qq, i) => {
+    let cls = "";
+    if (i === rt.currentIdx) cls = "current";
+    const answered = rt.answers[qq.id] !== undefined && String(rt.answers[qq.id]).trim() !== "";
+    if (answered) cls += " answered";
+    return `<button id="question-nav-${i}" class="${cls}" onclick="jumpTo(${i})" ${i === rt.currentIdx ? 'aria-current="step"' : ""} aria-label="Question ${i + 1}${answered ? ', answered' : ', not answered'}"><span>${i + 1}</span>${answered ? "<b>✓</b>" : ""}</button>`;
+  }).join("");
+  const opts = q.type === "identification" ? `
+    <label for="identification-answer" class="answer-label">Your answer</label><input id="identification-answer" class="identification-input" type="text" autocomplete="off" style="text-transform:uppercase" placeholder="Type your answer here" value="${esc(rt.answers[q.id] || "")}" oninput="setIdentificationAnswer('${q.id}', this.value)" />` : q.options.map((o, oi) => `
+    <label class="option ${rt.answers[q.id] === oi ? "selected" : ""}">
+      <input id="answer-${q.id}-${oi}" type="radio" name="qopt" ${rt.answers[q.id] === oi ? "checked" : ""} onchange="selectAnswer('${q.id}', ${oi})" />
+      <span class="otext">${q.type === "matching" ? `${String.fromCharCode(65 + oi)}. ` : ""}${esc(o)}</span>
+    </label>`).join("");
+  const partLabel = ({ identification: "Part 2 - Identification", true_false: "Part 3 - True or False", matching: "Part 4 - Matching Type" })[q.type] || "Part 1 - Multiple Choice";
+  const submitLabel = isQuiz ? "Submit quiz" : "Submit exam";
+  return `
+  <div class="wrap exam-take-wrap"><div class="wrap-inner exam-shell">
+    <div class="exam-topbar">
+      <div class="exam-heading"><span class="eyebrow">${isQuiz ? "Quiz" : "Exam"} · ${esc(exam.subject || "Class activity")}</span><h2>${esc(exam.title)}</h2><div class="exam-context">${esc(exam.yearLevel || "All years")} · ${exam.sectionScope === "ALL" ? "All sections" : `Section ${esc(exam.sectionScope)}`} · <span data-answer-count>${answeredCount} of ${total} answered</span>${isQuiz ? " · Leaving this tab submits the quiz" : ""}</div></div>
+      <div class="timer-wrap"><span class="timer-caption">Time remaining</span><div id="timerDisplay" role="timer" aria-live="off" class="timer ${rt.secondsLeft <= 60 ? 'low' : ''}">${fmtTime(rt.secondsLeft)}</div></div>
+    </div>
+    <div class="progress-track" role="progressbar" aria-label="Questions answered" aria-valuemin="0" aria-valuemax="${total}" aria-valuenow="${answeredCount}"><div class="progress-fill" style="width:${(answeredCount / total * 100) || 0}%"></div></div>
+    <div class="question-navigator"><div class="navigator-heading"><span>Question navigator</span><span class="navigator-legend"><i class="legend-dot answered-dot"></i> Answered <i class="legend-dot"></i> Unanswered</span></div><div class="qnav">${navBtns}</div></div>
+    <div class="question-block"><div class="question-kicker"><span class="part-label">${partLabel}</span><span class="question-count">Question ${rt.currentIdx + 1} of ${total}</span></div><div class="qtext">${esc(q.text)}</div>${q.type === "matching" ? '<p class="help-text">Choose the correct match for this item.</p>' : ""}${opts}</div>
+    <div class="exam-nav-row">
+      <div>
+        <button class="btn secondary" ${rt.currentIdx === 0 ? "disabled" : ""} onclick="jumpTo(${rt.currentIdx - 1})">&larr; Previous</button>
+        ${rt.currentIdx < total - 1 ? `<button class="btn secondary" onclick="jumpTo(${rt.currentIdx + 1})">Next &rarr;</button>` : ``}
+      </div>
+      <button class="btn" ${state.submitting ? "disabled" : ""} onclick="confirmSubmit()">${state.submitting ? "Saving submission..." : submitLabel}</button>
+    </div>
+  </div></div>`;
+}
+function selectAnswer(qid, idx) { state.runtime.answers[qid] = idx; render(); }
+function setIdentificationAnswer(qid, value) {
+  value = value.toUpperCase();
+  state.runtime.answers[qid] = value;
+  const questionIndex = state.runtime.exam.questions.findIndex(q => q.id === qid);
+  const navButton = document.querySelectorAll(".qnav button")[questionIndex];
+  if (navButton) {
+    const answered = value.trim() !== "";
+    navButton.classList.toggle("answered", answered);
+    navButton.setAttribute("aria-label", `Question ${questionIndex + 1}, ${answered ? "answered" : "not answered"}`);
+    navButton.querySelector("b")?.remove();
+    if (answered) navButton.insertAdjacentHTML("beforeend", "<b>✓</b>");
+  }
+  const answeredCount = answeredQuestionCount(state.runtime);
+  const total = state.runtime.exam.questions.length;
+  document.querySelectorAll("[data-answer-count]").forEach(label => { label.textContent = `${answeredCount} of ${total} answered`; });
+  const progress = document.querySelector('[role="progressbar"]');
+  progress?.setAttribute("aria-valuenow", answeredCount);
+  const fill = progress?.querySelector(".progress-fill");
+  if (fill) fill.style.width = `${answeredCount / total * 100}%`;
+}
+function jumpTo(idx) { if (idx < 0 || idx >= state.runtime.exam.questions.length) return; state.runtime.currentIdx = idx; render(); }
+function confirmSubmit() {
+  const total = state.runtime.exam.questions.length;
+  const answered = answeredQuestionCount(state.runtime);
+  const isQuiz = state.runtime.exam.activityType === "quiz";
+  const activityName = isQuiz ? "quiz" : "exam";
+  const msg = answered < total
+    ? `You've answered ${answered} of ${total} questions. Submit this ${activityName} anyway?`
+    : `Submit your ${activityName} now?`;
+  showModal({
+    title: `Submit ${activityName}`,
+    message: msg,
+    confirmLabel: `Submit ${activityName}`,
+    cancelLabel: "Cancel",
+    onConfirm: () => { clearInterval(state.runtime.timerId); submitExam(false); }
+  });
+}
+async function submitExam(autoSubmitted, submitReason = autoSubmitted ? "time_limit" : "manual") {
+  if (state.submitting || !state.runtime) return;
+  state.submitting = true;
+  const rt = state.runtime;
+  const exam = rt.exam;
+  if (rt.timerId) clearInterval(rt.timerId);
+  if (!rt.submissionId) rt.submissionId = Array.from(crypto.getRandomValues(new Uint32Array(4)), n => n.toString(16).padStart(8, "0")).join("");
+  const timeTakenSec = Math.max(0, exam.duration * 60 - rt.secondsLeft);
+  const payload = { submissionId: rt.submissionId, examId: exam.id, name: state.currentUser.name, rollNo: state.currentUser.rollNo, answers: rt.answers, timeTakenSec, autoSubmitted: !!autoSubmitted, submitReason };
+  render();
+  try {
+    const result = await apiRequest("POST", "/api/results", payload);
+    state.lastResult = result;
+    state.myResults = state.myResults.concat([{ id: result.id, examId: result.examId, examTitle: result.examTitle, activityType: result.activityType || exam.activityType || "exam", score: result.score, total: result.total, percent: result.percent }]);
+    state.runtime = null;
+    state.submitting = false;
+    setView("studentResult");
+  } catch (err) {
+    state.submitting = false;
+    showModal({ title: "Submission failed", message: err.message || "Could not submit your exam. Check your connection and try again." });
+    render();
+  }
+}
+
+/* ============================= RESULT PAGE ============================= */
+function renderStudentResult() {
+  const r = state.lastResult;
+  if (!r) return `<div class="wrap"><div class="wrap-inner"><div class="empty">Submission not found.</div></div></div>`;
+  return `<div class="wrap"><div class="wrap-inner"><button class="back-link" onclick="goStudentHome()">&larr; Back to assessments</button><div class="score-hero"><span class="eyebrow">SUBMISSION RECEIVED</span><h2>Your work is saved.</h2><div class="meta">${esc(r.examTitle || "Assessment")}</div><div class="big">${r.score}<span style="font-size:26px;color:var(--ink-faint);"> / ${r.total}</span></div><div class="pct">Time taken ${fmtTime(r.timeTakenSec)}</div><p class="help-text">You have completed this assessment. Questions and answer reviews are available to your teacher only.</p></div><button class="btn" onclick="goStudentHome()">Back to your workspace ${uiIcon("arrow")}</button></div></div>`;
+}
+
+/* ============================= ROUTER / RENDER ============================= */
+function render() {
+  const previous = captureInterfaceState();
+  let body = "";
+  switch (state.view) {
+    case "landing": body = renderLanding(); break;
+    case "studentSignup": body = renderStudentSignup(); break;
+    case "studentLogin": body = renderStudentLogin(); break;
+    case "studentHome": body = renderStudentHome(); break;
+    case "takeExam": body = renderTakeExam(); break;
+    case "studentResult": body = renderStudentResult(); break;
+    default: body = renderLanding();
+  }
+  document.body.className = state.currentUser ? "app-page student-page" : state.view === "landing" ? "landing-page" : state.view === "studentSignup" ? "auth-page student-signup-page" : "auth-page";
+  const content = state.currentUser ? renderWorkspace(body, "student") : state.view === "landing" ? body : renderAuthLayout(body);
+  document.getElementById("app").innerHTML = content + renderModalHtml();
+  enhanceInterface(previous);
+}
+document.addEventListener("visibilitychange", handleVisibilityChange);
+window.addEventListener("popstate", handleQuizBackNavigation);
+render();
+
+state.currentUser = {"role": "student", "name": "Alex Santos", "department": "BSIT", "departments": ["BSIT"], "section": "A", "yearLevel": "1st Year", "rollNo": "PREVIEW-001"};
+state.exams = [{"id": "sample-1", "title": "Introduction to Programming", "subject": "Computer Programming 1", "activityType": "exam", "duration": 60, "questionCount": 40, "attempts": 24, "department": "BSIT", "departments": ["BSIT"], "yearLevel": "1st Year", "sectionScope": "ALL"}, {"id": "sample-2", "title": "The Fundamentals of Computing", "subject": "Computing Fundamentals", "activityType": "quiz", "duration": 20, "questionCount": 15, "attempts": 18, "department": "BSIT", "departments": ["BSIT"], "yearLevel": "1st Year", "sectionScope": "A"}, {"id": "sample-3", "title": "Understanding Digital Systems", "subject": "Computer Systems", "activityType": "exam", "duration": 45, "questionCount": 30, "attempts": 12, "department": "BSIT", "departments": ["BSIT"], "yearLevel": "1st Year", "sectionScope": "ALL"}];
+state.myResults=[{id:'r1',examId:'sample-3',score:26,total:30,percent:86.7}]; setView('studentHome');
+state.lastResult={examTitle:'Introduction to Programming',score:35,total:40,timeTakenSec:1200}; setView('studentResult');
+
+
+setTimeout(() => {
+  const check = document.createElement('meta'); check.id='uiLayoutCheck';
+  check.content=JSON.stringify({width:innerWidth,documentWidth:document.documentElement.scrollWidth,view:state.view,overflow:document.documentElement.scrollWidth>innerWidth+1});
+  document.head.append(check);
+}, 100);
+</script></body></html>

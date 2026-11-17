@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AbieksExamSys — Sign in</title>
+<link rel="stylesheet" href="/css/style.css?v=teacher-no-notifications-20261111">
+<base href="/">
+<script>window.ARALHUB_ROLE = "public";</script>
+</head>
+<body class="auth-page">
+<a class="skip-link" href="#mainContent">Skip to content</a>
+<div id="app"></div>
+<script src="/js/common.js?v=teacher-no-notifications-20261111"></script>
+<script>
+let state = {view:"login", currentUser:null, errorMsg:"", successMsg:""};
+const loginParameters = new URLSearchParams(window.location.search);
+if (loginParameters.has("registered")) state.successMsg = "Account created. Sign in with your student ID and password.";
+if (loginParameters.has("expired")) state.errorMsg = "Your session expired. Sign in again to continue. Any saved assessment answers remain on this device.";
+function render() {
+  const previous = captureInterfaceState();
+  document.getElementById("app").innerHTML = renderAuthLayout(renderPortalLogin()) + renderModalHtml();
+  enhanceInterface(previous);
+}
+render();
+</script>
+</body>
+</html>

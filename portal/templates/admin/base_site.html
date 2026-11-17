@@ -1,0 +1,6 @@
+{% extends "admin/base.html" %}
+{% load static %}
+{% block title %}{{ title }} | {{ site_title|default:_("Administration") }}{% endblock %}
+{% block extrastyle %}{{ block.super }}<link rel="stylesheet" href="{% static 'admin/aralhub.css' %}?v=purple-notifications-20261111">{% endblock %}
+{% block branding %}<div class="campus-brand"><span class="campus-brand-mark"><img src="{% static 'admin/wallpapercdk.png' %}" alt="AbieksExamSys logo"></span><div><a href="{% url 'admin:index' %}">{{ site_header }}</a><span>COLEGIO DE KIDAPAWAN · CAMPUS CONTROL</span></div></div>{% endblock %}
+{% block nav-global %}{% endblock %}

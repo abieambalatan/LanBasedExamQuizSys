@@ -1,0 +1,66 @@
+[
+  {
+    "screen": "teacher-materials",
+    "requested_width": 1440,
+    "width": 1440,
+    "documentWidth": 1440,
+    "view": "learningHome",
+    "overflow": false
+  },
+  {
+    "screen": "teacher-materials",
+    "requested_width": 768,
+    "width": 768,
+    "documentWidth": 768,
+    "view": "learningHome",
+    "overflow": false
+  },
+  {
+    "screen": "teacher-materials",
+    "requested_width": 390,
+    "width": 390,
+    "documentWidth": 390,
+    "view": "learningHome",
+    "overflow": false
+  },
+  {
+    "screen": "teacher-materials",
+    "requested_width": 320,
+    "width": 320,
+    "documentWidth": 320,
+    "view": "learningHome",
+    "overflow": false
+  },
+  {
+    "screen": "student-materials",
+    "requested_width": 1440,
+    "width": 1440,
+    "documentWidth": 1440,
+    "view": "learningHome",
+    "overflow": false
+  },
+  {
+    "screen": "student-materials",
+    "requested_width": 768,
+    "width": 768,
+    "documentWidth": 768,
+    "view": "learningHome",
+    "overflow": false
+  },
+  {
+    "screen": "student-materials",
+    "requested_width": 390,
+    "width": 390,
+    "documentWidth": 390,
+    "view": "learningHome",
+    "overflow": false
+  },
+  {
+    "screen": "student-materials",
+    "requested_width": 320,
+    "width": 320,
+    "documentWidth": 320,
+    "view": "learningHome",
+    "overflow": false
+  }
+]

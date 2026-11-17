@@ -1,0 +1,133 @@
+ExamHub Django LAN Deployment Guide
+
+Run one server PC; all students open http://SERVER-IP:5000 in their browsers.
+
+1. Open PowerShell in the project folder:
+   cd 'C:\AralHubLanBasedSystem V2'
+
+2. Install dependencies into the project virtual environment:
+   py -m venv .venv
+   .\.venv\Scripts\python.exe -m pip install -r requirements.txt
+   If .venv already exists, use the pip command directly.
+
+3. Start the server:
+   .\start_aralhub.bat
+   Django Superadmin: http://SERVER-IP:5000/admin/
+   Teacher workspace: http://SERVER-IP:5000/administrator
+   The launcher prefers .venv, applies Django migrations, and starts Django
+   through Waitress, the production HTTP server.
+   Keep this process running. Stop an older instance before starting a new one.
+   Existing administrator credentials are unchanged. Environment values for
+   EXAM_PORTAL_ADMIN_USERNAME and EXAM_PORTAL_ADMIN_PASSWORD take precedence
+   over the launcher's existing defaults.
+   The initial Django superuser is provisioned once from the existing configured
+   credentials. Later password changes are managed in Django, not overwritten
+   by the launcher. Superadmins can manage teachers at /admin/portal/teacher/.
+
+4. PostgreSQL is the only supported live database. Both the batch launcher and
+   Task Scheduler use start_aralhub_postgresql.ps1 with the saved encrypted
+   credentials. Missing PostgreSQL configuration stops startup; SQLite engines
+   and EXAM_PORTAL_DB_PATH are rejected. No SQLite database is created.
+   Existing records and passwords are held in PostgreSQL.
+
+5. Allow TCP port 5000 through Windows Firewall if needed. In administrator
+   PowerShell:
+   New-NetFirewallRule -DisplayName 'AralHub LAN' -Direction Inbound -Action Allow -Protocol TCP -LocalPort 5000
+   Use a stable server IP. Students must be on a network that can reach it.
+
+6. Check locally:
+   Invoke-WebRequest -Uri http://127.0.0.1:5000
+   Then check the same portal from a student computer using the server's IP.
+   Django detects local server hostnames/IPs automatically. For a custom LAN
+   hostname, set EXAM_PORTAL_ALLOWED_HOSTS to a comma-separated list of allowed
+   hostnames/IPs. See DJANGO_BACKEND.md for configuration and project structure.
+
+7. To configure manual startup through Task Scheduler, run in administrator PowerShell:
+   powershell -ExecutionPolicy Bypass -File .\setup_lan_server.ps1
+   This registers the project in its current folder, including paths containing
+   spaces, and creates the firewall rule if missing. The scheduled task is
+   named 'AralHub LAN'; it has no boot or sign-in trigger. It runs without a terminal window, has no execution
+   time limit and retries failed starts. The setup does not start it immediately.
+   If the task already exists for an old folder, rerun this script to update it.
+   After signing in, open Task Scheduler > Task Scheduler Library, select
+   'AralHub LAN', and click Run. Clients can then open http://SERVER-IP:5000.
+   The server stays off after a PC restart until you run the task again.
+   Use End in Task Scheduler to stop it when finished.
+   The launcher uses a Windows process job so End also stops all of its Python
+   processes and releases port 5000. Click Refresh in Task Scheduler to see the
+   updated state: Running while serving, Ready after End. Run starts it again.
+   Ending the task stops the web server; the PostgreSQL Windows service stays on.
+   After installing this launcher update, end the old task before running it
+   again. A server already detached by the old launcher must be stopped once
+   before the updated task can take control of port 5000.
+   To update an already installed task without reconfiguring database credentials
+   or stopping the current server, run in administrator PowerShell:
+   powershell -ExecutionPolicy Bypass -File .\set_manual_startup.ps1
+   Do not also start a second server manually while the task is running.
+
+8. Defaults for 200 students:
+   - 16 Waitress worker threads; up to 400 open HTTP connections.
+   - PostgreSQL connections and indexed result queries.
+   - Result indexes and duplicate-attempt protection.
+   - Student submissions retry temporary connection/server failures up to
+     four attempts, preserving the same attempt key to avoid duplicates.
+   Worker threads are not a student limit: requests queue during busy moments.
+   EXAM_PORTAL_THREADS can override the worker count; test changes first.
+   EXAM_PORTAL_HOST and EXAM_PORTAL_PORT override the listening address/port.
+   If changing the port, update the firewall rule and student URL too.
+
+9. Automated checks:
+   The configured launcher runs manage.py check with PostgreSQL credentials.
+   .\.venv\Scripts\python.exe -m unittest -v test_database_configuration test_app test_frontend
+   The browser test uses headless Microsoft Edge, if installed.
+
+10. Repeat the isolated 200-student load test:
+   .\.venv\Scripts\python.exe load_test.py --users 200 --output reports\load_test_django_results.json
+   This starts a separate Waitress process on a temporary loopback port and
+   creates only synthetic records in a temporary database. It tests real
+   Django password verification, CSRF/cookies, dashboard/exam reads, auto-submissions
+   and retries of already-saved submissions. It verifies one correctly graded
+   result per student and database integrity. The live PostgreSQL database is not modified.
+   Run from this project folder. The JSON report records timings and failures.
+
+11. Capacity limits:
+   A successful local test establishes server-side capacity for the tested
+   workflow, database size and machine. It does not test 200 physical devices,
+   browser rendering, Wi-Fi access points, switches, or power failures.
+   Before an actual 200-student exam, rehearse on the intended LAN with the
+   intended devices. Use a wired server connection where possible and verify
+   every student receives a saved result. Browser refresh before a successful
+   submission can still lose answers; this upgrade does not add draft recovery.
+
+12. Bulk exam TXT upload:
+   In Create/Edit activity, open Upload questions from TXT and choose a file.
+   Download TXT template in the editor for all four parts: Multiple Choice,
+   Identification, True or False, and Matching Type. Question counts come from
+   the file. See TXT_EXAM_FORMAT.md for the format and matching choice lists.
+   Teacher result screens and exports use scores instead of percentages.
+
+13. Student review policy:
+   After submission, students receive a score-only receipt. Submitted question
+   papers and answer reviews are blocked for students in both the UI and API.
+   Assigned teachers and administrators can still review submissions. Only a
+   teacher returning/reopening a submission permits access for a new attempt.
+
+14. PostgreSQL configuration:
+   PostgreSQL is required. Use setup_lan_server.ps1 to configure encrypted
+   credentials, then start_aralhub.bat or Task Scheduler to start the server.
+   The former migrate_postgresql.ps1 now runs the PostgreSQL launcher only;
+   it no longer creates SQLite files, imports records, or creates backups.
+   See DJANGO_BACKEND.md for environment settings and configuration checks.
+
+15. Student signup and assessment access:
+   Students enter first name, last name, optional middle initial, student ID,
+   program/department, year level, section, and password. They do not select
+   teachers. Teachers choose the programs/departments, year level, and section
+   when publishing an exam or quiz. Only students matching all three can view,
+   open, or submit it; All sections includes every section in the selected year
+   and programs. Existing teacher enrollments no longer restrict exam access.
+   Teachers can find students and reset passwords within their assigned programs.
+   Existing names and passwords are preserved. New accounts store name parts
+   separately and display names as Last name, First name M.
+   Restart the AralHub task after updating the project; its launcher applies
+   the student-name database migration automatically. Refresh student browsers.
